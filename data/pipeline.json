@@ -1,65 +1,77 @@
-{
-  "prospects": [
-    {
-      "id": "lous-contracting",
-      "name": "Lou's Contracting",
-      "phone": "843-319-8508",
-      "email": null,
-      "status": "new",
-      "sequence": null,
-      "sequenceStep": 0,
-      "enrolledAt": null,
-      "lastContactedAt": null,
-      "notes": "Local contractor — potential dumpster rental client"
-    },
-    {
-      "id": "somo-trash",
-      "name": "SOMO Trash",
-      "phone": "843-307-3413",
-      "email": null,
-      "status": "new",
-      "sequence": null,
-      "sequenceStep": 0,
-      "enrolledAt": null,
-      "lastContactedAt": null,
-      "notes": "Waste hauler — potential partnership or referral"
-    },
-    {
-      "id": "timmons-waste",
-      "name": "Timmons Waste",
-      "phone": "843-393-4884",
-      "email": null,
-      "status": "new",
-      "sequence": null,
-      "sequenceStep": 0,
-      "enrolledAt": null,
-      "lastContactedAt": null,
-      "notes": "Waste services — potential partnership"
-    },
-    {
-      "id": "florence-co-recycling",
-      "name": "Florence Co. Recycling",
-      "phone": "843-665-3050",
-      "email": null,
-      "status": "new",
-      "sequence": null,
-      "sequenceStep": 0,
-      "enrolledAt": null,
-      "lastContactedAt": null,
-      "notes": "County recycling — potential referral source"
-    },
-    {
-      "id": "sp-container",
-      "name": "S&P Container",
-      "phone": "843-673-0404",
-      "email": null,
-      "status": "new",
-      "sequence": null,
-      "sequenceStep": 0,
-      "enrolledAt": null,
-      "lastContactedAt": null,
-      "notes": "Container supplier — potential vendor or partner"
-    }
-  ],
-  "lastUpdated": "2026-03-12T00:00:00Z"
-}
+[
+  {
+    "id": "lous-contracting",
+    "place_id": "lous-contracting",
+    "name": "Lou's Contracting",
+    "phone": "843-319-8508",
+    "formatted_phone_number": "843-319-8508",
+    "email": null,
+    "stage": "prospect",
+    "sequence": null,
+    "sequenceStep": 0,
+    "sequenceStarted": null,
+    "lastContact": null,
+    "activities": [],
+    "notes": "Local contractor — potential dumpster rental client"
+  },
+  {
+    "id": "somo-trash",
+    "place_id": "somo-trash",
+    "name": "SOMO Trash",
+    "phone": "843-307-3413",
+    "formatted_phone_number": "843-307-3413",
+    "email": null,
+    "stage": "prospect",
+    "sequence": null,
+    "sequenceStep": 0,
+    "sequenceStarted": null,
+    "lastContact": null,
+    "activities": [],
+    "notes": "Waste hauler — potential partnership or referral"
+  },
+  {
+    "id": "timmons-waste",
+    "place_id": "timmons-waste",
+    "name": "Timmons Waste",
+    "phone": "843-393-4884",
+    "formatted_phone_number": "843-393-4884",
+    "email": null,
+    "stage": "prospect",
+    "sequence": null,
+    "sequenceStep": 0,
+    "sequenceStarted": null,
+    "lastContact": null,
+    "activities": [],
+    "notes": "Waste services — potential partnership"
+  },
+  {
+    "id": "florence-co-recycling",
+    "place_id": "florence-co-recycling",
+    "name": "Florence Co. Recycling",
+    "phone": "843-665-3050",
+    "formatted_phone_number": "843-665-3050",
+    "email": null,
+    "stage": "prospect",
+    "sequence": null,
+    "sequenceStep": 0,
+    "sequenceStarted": null,
+    "lastContact": null,
+    "activities": [],
+    "notes": "County recycling — potential referral source"
+  },
+  {
+    "id": "sp-container",
+    "place_id": "sp-container",
+    "name": "S&P Container",
+    "phone": "843-673-0404",
+    "formatted_phone_number": "843-673-0404",
+    "email": null,
+    "stage": "prospect",
+    "sequence": null,
+    "sequenceStep": 0,
+    "sequenceStarted": null,
+    "lastContact": null,
+    "activities": [],
+    "notes": "Container supplier — potential vendor or partner"
+  }
+]
