@@ -15,8 +15,16 @@
     "addedAt": "2026-03-05T00:32:08.439Z",
     "lastContact": null,
     "score": 60,
-    "activities": [],
-    "sequenceStep": 0
+    "activities": [
+      {
+        "type": "enrolled",
+        "date": "2026-03-12T21:08:23.712Z",
+        "note": "🚀 Enrolled in \"New Prospect — 5 Touch\" via API"
+      }
+    ],
+    "sequenceStep": 0,
+    "sequence": "new_prospect",
+    "sequenceStarted": "2026-03-12T21:08:23.712Z"
   },
   {
     "place_id": "ChIJx1gGngJvVYgRrL8f5Tz_xAM",
@@ -91,7 +99,7 @@
     "email": "Robertsdumpsterrentals@gmail.com",
     "formatted_phone_number": "(803) 246-0609",
     "vicinity": "Kershaw, SC",
-    "rating": 5.0,
+    "rating": 5,
     "user_ratings_total": 77,
     "website": "https://www.robertsdumpsterrentals.com/",
     "notes": "",
