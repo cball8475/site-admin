@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 // ENV — injected by Netlify at build time
 // ══════════════════════════════════════════════════════════════
 const ENV_TOKEN   = import.meta.env.VITE_GITHUB_TOKEN  || "";
-const ENV_REPO    = import.meta.env.VITE_GITHUB_REPO   || "cball8475/cball8475.github.io";
+const ENV_REPO    = import.meta.env.VITE_GITHUB_REPO   || "cball8475/site-admin";
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
 
 // ══════════════════════════════════════════════════════════════
