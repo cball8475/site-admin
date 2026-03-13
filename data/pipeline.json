@@ -11,18 +11,32 @@
     "user_ratings_total": 11,
     "website": "https://www.lousdumpsterrental.com/",
     "notes": "",
-    "stage": "prospect",
+    "stage": "contacted",
     "addedAt": "2026-03-05T00:32:08.439Z",
-    "lastContact": null,
+    "lastContact": "2026-03-13T12:00:23.371Z",
     "score": 60,
     "activities": [
       {
         "type": "enrolled",
         "date": "2026-03-12T21:08:23.712Z",
         "note": "🚀 Enrolled in \"New Prospect — 5 Touch\" via API"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.371Z",
+        "note": "✅ Auto: Intro Email — Draft created (no email on file)"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.371Z",
+        "note": "📧 Draft ready: \"Partner with Florence SC Services — We Send You Customers\" — send manually",
+        "draft": {
+          "subject": "Partner with Florence SC Services — We Send You Customers",
+          "body": "Hi Lou,\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com"
+        }
       }
     ],
-    "sequenceStep": 0,
+    "sequenceStep": 1,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:23.712Z"
   },
@@ -38,18 +52,32 @@
     "user_ratings_total": 32,
     "website": null,
     "notes": "",
-    "stage": "prospect",
+    "stage": "contacted",
     "addedAt": "2026-03-05T00:32:08.439Z",
-    "lastContact": null,
+    "lastContact": "2026-03-13T12:00:23.371Z",
     "score": 65,
     "activities": [
       {
         "type": "enrolled",
         "date": "2026-03-12T21:08:28.904Z",
         "note": "🚀 Enrolled in \"New Prospect — 5 Touch\" via API"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.371Z",
+        "note": "✅ Auto: Intro Email — Draft created (no email on file)"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.371Z",
+        "note": "📧 Draft ready: \"Partner with Florence SC Services — We Send You Customers\" — send manually",
+        "draft": {
+          "subject": "Partner with Florence SC Services — We Send You Customers",
+          "body": "Hi Dennis,\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com"
+        }
       }
     ],
-    "sequenceStep": 0,
+    "sequenceStep": 1,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:28.904Z"
   },
@@ -65,18 +93,23 @@
     "user_ratings_total": 8,
     "website": "http://www.spcontainer.net/",
     "notes": "",
-    "stage": "prospect",
+    "stage": "contacted",
     "addedAt": "2026-03-05T00:32:13.737Z",
-    "lastContact": null,
+    "lastContact": "2026-03-13T12:00:23.511Z",
     "score": 30,
     "activities": [
       {
         "type": "enrolled",
         "date": "2026-03-12T21:08:33.883Z",
         "note": "🚀 Enrolled in \"New Prospect — 5 Touch\" via API"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.511Z",
+        "note": "✅ Auto: Intro Email — Sent to info@spcontainer.net"
       }
     ],
-    "sequenceStep": 0,
+    "sequenceStep": 1,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:33.883Z"
   },
@@ -92,18 +125,23 @@
     "user_ratings_total": 35,
     "website": "http://arborworkstree.com/",
     "notes": "",
-    "stage": "prospect",
+    "stage": "contacted",
     "addedAt": "2026-03-07T18:39:56.301Z",
-    "lastContact": null,
+    "lastContact": "2026-03-13T12:00:23.646Z",
     "score": 85,
     "sequence": "new_prospect",
-    "sequenceStep": 0,
+    "sequenceStep": 1,
     "sequenceStarted": "2026-03-12T20:07:36.360Z",
     "activities": [
       {
         "type": "enrolled",
         "date": "2026-03-12T20:07:36.360Z",
         "note": "🚀 Added and auto-enrolled via API"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-13T12:00:23.646Z",
+        "note": "✅ Auto: Intro Email — Sent to Scott@arborworkstreesc.com"
       }
     ]
   },
