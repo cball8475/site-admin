@@ -13,7 +13,7 @@
     "notes": "",
     "stage": "contacted",
     "addedAt": "2026-03-05T00:32:08.439Z",
-    "lastContact": "2026-03-13T12:00:23.371Z",
+    "lastContact": "2026-03-16T12:00:50.471Z",
     "score": 60,
     "activities": [
       {
@@ -34,9 +34,23 @@
           "subject": "Partner with Florence SC Services — We Send You Customers",
           "body": "Hi Lou,\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com"
         }
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.471Z",
+        "note": "✅ Auto: Follow-up Email — Draft created (no email on file)"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.471Z",
+        "note": "📧 Draft ready: \"Quick follow-up — dumpster rental leads\" — send manually",
+        "draft": {
+          "subject": "Quick follow-up — dumpster rental leads",
+          "body": "Hi Lou,\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com"
+        }
       }
     ],
-    "sequenceStep": 1,
+    "sequenceStep": 2,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:23.712Z"
   },
@@ -54,7 +68,7 @@
     "notes": "",
     "stage": "contacted",
     "addedAt": "2026-03-05T00:32:08.439Z",
-    "lastContact": "2026-03-13T12:00:23.371Z",
+    "lastContact": "2026-03-16T12:00:50.471Z",
     "score": 65,
     "activities": [
       {
@@ -75,9 +89,23 @@
           "subject": "Partner with Florence SC Services — We Send You Customers",
           "body": "Hi Dennis,\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com"
         }
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.471Z",
+        "note": "✅ Auto: Follow-up Email — Draft created (no email on file)"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.471Z",
+        "note": "📧 Draft ready: \"Quick follow-up — dumpster rental leads\" — send manually",
+        "draft": {
+          "subject": "Quick follow-up — dumpster rental leads",
+          "body": "Hi Dennis,\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com"
+        }
       }
     ],
-    "sequenceStep": 1,
+    "sequenceStep": 2,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:28.904Z"
   },
@@ -95,7 +123,7 @@
     "notes": "",
     "stage": "contacted",
     "addedAt": "2026-03-05T00:32:13.737Z",
-    "lastContact": "2026-03-13T12:00:23.511Z",
+    "lastContact": "2026-03-16T12:00:50.673Z",
     "score": 30,
     "activities": [
       {
@@ -107,9 +135,14 @@
         "type": "email",
         "date": "2026-03-13T12:00:23.511Z",
         "note": "✅ Auto: Intro Email — Sent to info@spcontainer.net"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.673Z",
+        "note": "✅ Auto: Follow-up Email — Sent to info@spcontainer.net"
       }
     ],
-    "sequenceStep": 1,
+    "sequenceStep": 2,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:33.883Z"
   },
@@ -127,10 +160,10 @@
     "notes": "",
     "stage": "contacted",
     "addedAt": "2026-03-07T18:39:56.301Z",
-    "lastContact": "2026-03-13T12:00:23.646Z",
+    "lastContact": "2026-03-16T12:00:50.861Z",
     "score": 85,
     "sequence": "new_prospect",
-    "sequenceStep": 1,
+    "sequenceStep": 2,
     "sequenceStarted": "2026-03-12T20:07:36.360Z",
     "activities": [
       {
@@ -142,6 +175,11 @@
         "type": "email",
         "date": "2026-03-13T12:00:23.646Z",
         "note": "✅ Auto: Intro Email — Sent to Scott@arborworkstreesc.com"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-16T12:00:50.861Z",
+        "note": "✅ Auto: Follow-up Email — Sent to Scott@arborworkstreesc.com"
       }
     ]
   },
