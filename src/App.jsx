@@ -1262,7 +1262,7 @@ function BuyerCRM({gh, flash}) {
           )}
           {!searched&&(
             <div style={{textAlign:"center",padding:"3rem",color:C.muted}}>
-              <div style={{fontSize:36,marginBottom:"0.6rem"}}>🗑️</div>
+              <img src="/logo.png" alt="Florence SC Services" style={{width:48,height:48,borderRadius:10,marginBottom:"0.6rem"}}/>
               <div style={{fontSize:14,color:"#fff",fontWeight:700,marginBottom:"0.4rem"}}>Florence SC Prospects</div>
               <div style={{fontSize:12}}>Click Search Google Places or Add Prospect to get started</div>
             </div>
@@ -1540,7 +1540,7 @@ export default function App() {
     <div style={{minHeight:"100vh",background:C.dark,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'IBM Plex Sans',sans-serif"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
       <div style={{textAlign:"center",color:C.muted}}>
-        <div style={{fontSize:42,marginBottom:"1rem",animation:"pulse 1s infinite"}}>🗑️</div>
+        <img src="/logo.png" alt="Florence SC Services" style={{width:64,height:64,borderRadius:12,marginBottom:"1rem",animation:"pulse 1s infinite"}}/>
         <div style={{fontSize:16,color:"#fff",fontWeight:700}}>Florence SC Services</div>
         <div style={{fontSize:12,marginTop:"0.5rem"}}>Connecting…</div>
         {loginErr&&<div style={{marginTop:"1rem",color:"#fca5a5",fontSize:12}}>⚠️ {loginErr}</div>}
@@ -1553,7 +1553,7 @@ export default function App() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input::placeholder{color:rgba(200,223,240,0.3);}`}</style>
       <div style={{width:"100%",maxWidth:420}}>
         <div style={{display:"flex",alignItems:"center",gap:"0.75rem",marginBottom:"2rem",justifyContent:"center"}}>
-          <div style={{width:44,height:44,background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🗑️</div>
+          <img src="/logo.png" alt="Florence SC Services" style={{width:44,height:44,borderRadius:10}}/>
           <div>
             <div style={{fontWeight:800,fontSize:18,color:"#fff",letterSpacing:"-0.02em"}}>Florence SC Services</div>
             <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",textTransform:"uppercase"}}>Outreach Engine</div>
@@ -1586,7 +1586,7 @@ export default function App() {
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:C.dark,fontFamily:"'IBM Plex Sans',sans-serif",overflow:"hidden"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:rgba(99,179,237,0.2);border-radius:2px;}input::placeholder,textarea::placeholder{color:rgba(200,223,240,0.3);}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes slide-in{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}`}</style>
       <div style={{height:46,background:C.panel,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:"0.65rem",padding:"0 1rem",flexShrink:0}}>
-        <div style={{width:24,height:24,background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>🗑️</div>
+        <img src="/logo.png" alt="FSC" style={{width:24,height:24,borderRadius:5}}/>
         <span style={{fontWeight:800,fontSize:13,color:"#fff",letterSpacing:"-0.02em"}}>Florence SC</span>
         <span style={{fontSize:10,color:C.muted,fontFamily:"'IBM Plex Mono'"}}>/ {repo}</span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
