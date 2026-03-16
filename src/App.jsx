@@ -8,8 +8,6 @@ const ENV_REPO    = import.meta.env.VITE_GITHUB_REPO   || "cball8475/site-admin"
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
 const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL   || "";
 const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
-const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL   || "";
-const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
 
 // ══════════════════════════════════════════════════════════════
 // GITHUB API
