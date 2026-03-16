@@ -1,0 +1,37 @@
+[
+  {
+    "type": "email",
+    "name": "Lou's Contracting LLC Dumpster Rental Service",
+    "status": "draft",
+    "reason": "no email on file",
+    "timestamp": "2026-03-16T12:00:52.261Z"
+  },
+  {
+    "type": "email",
+    "name": "Timmons Waste Service, INC",
+    "status": "draft",
+    "reason": "no email on file",
+    "timestamp": "2026-03-16T12:00:52.261Z"
+  },
+  {
+    "type": "email",
+    "name": "S&P Container Service",
+    "status": "sent",
+    "to": "info@spcontainer.net",
+    "timestamp": "2026-03-16T12:00:52.261Z"
+  },
+  {
+    "type": "email",
+    "name": "Arborworks Dumpster Rental",
+    "status": "sent",
+    "to": "Scott@arborworkstreesc.com",
+    "timestamp": "2026-03-16T12:00:52.261Z"
+  },
+  {
+    "type": "email",
+    "name": "Roberts Dumpster Rentals, LLC",
+    "status": "error",
+    "error": "Resend error: {\"statusCode\":429,\"name\":\"rate_limit_exceeded\",\"message\":\"Too many requests. You can only make 2 requests per second. See rate limit response headers for more information. Or contact support to increase rate limit.\"}",
+    "timestamp": "2026-03-16T12:00:52.261Z"
+  }
+]
