@@ -1,54 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // ══════════════════════════════════════════════════════════════
 // ENV — injected by Netlify at build time
 // ══════════════════════════════════════════════════════════════
-const ENV_TOKEN   = import.meta.env.VITE_GITHUB_TOKEN  || "";
-const ENV_REPO    = import.meta.env.VITE_GITHUB_REPO   || "cball8475/site-admin";
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
 const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL   || "";
 const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
-
-// ══════════════════════════════════════════════════════════════
-// GITHUB API
-// ══════════════════════════════════════════════════════════════
-class GH {
-  constructor(token, repo) {
-    this.token = token; this.repo = repo;
-    this.h = { Authorization:`Bearer ${token}`, Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28" };
-  }
-  async req(path, opts={}) {
-    const r = await fetch(`https://api.github.com${path}`, { headers: this.h, ...opts });
-    if (!r.ok) { const e = await r.json().catch(()=>{}); throw new Error(e?.message||`HTTP ${r.status}`); }
-    return r.json();
-  }
-  ping()       { return this.req(`/repos/${this.repo}`); }
-  ls()         { return this.req(`/repos/${this.repo}/contents`); }
-  getFile(p)   { return this.req(`/repos/${this.repo}/contents/${p}`); }
-  lastCommit() { return this.req(`/repos/${this.repo}/commits?per_page=1`); }
-  async readFile(p) {
-    const d = await this.getFile(p);
-    return { content: decodeURIComponent(escape(atob(d.content.replace(/\n/g,"")))), sha: d.sha };
-  }
-  async write(p, content, sha, msg) {
-    const enc = btoa(unescape(encodeURIComponent(content)));
-    const body = { message: msg, content: enc, ...(sha ? { sha } : {}) };
-    return this.req(`/repos/${this.repo}/contents/${p}`, { method:"PUT", body:JSON.stringify(body) });
-  }
-  async readJSON(p) {
-    try {
-      const { content, sha } = await this.readFile(p);
-      return { data: JSON.parse(content), sha };
-    } catch(e) {
-      if (e.message.includes("404") || e.message.includes("Not Found")) return { data: null, sha: null };
-      throw e;
-    }
-  }
-  async writeJSON(p, data, sha, msg) {
-    const res = await this.write(p, JSON.stringify(data, null, 2), sha, msg);
-    return res.content?.sha || sha;
-  }
-}
 
 // ══════════════════════════════════════════════════════════════
 // LOCALSTORAGE — fast cache only
@@ -93,10 +50,6 @@ function normalizeProspect(p) {
 // ══════════════════════════════════════════════════════════════
 // SHARED HELPERS & STYLES
 // ══════════════════════════════════════════════════════════════
-const EDITABLE  = [".html",".css",".js",".md",".txt",".xml",".json",".svg"];
-const canEdit   = n => EDITABLE.some(e=>n.endsWith(e)) || ["CNAME","robots.txt"].includes(n);
-const fileEmoji = n => n.endsWith(".html")?"🌐":n.endsWith(".css")?"🎨":n.endsWith(".js")?"⚡":n.endsWith(".md")?"📄":n.endsWith(".xml")?"📋":n==="CNAME"?"🌍":"📄";
-const kb        = b => b<1024?`${b}B`:`${(b/1024).toFixed(1)}KB`;
 const cleanPhone = p => p ? p.replace(/\D/g,"") : "";
 
 function ago(iso) {
@@ -137,18 +90,6 @@ const btnBase = { display:"inline-flex", alignItems:"center", gap:"0.4rem", bord
 // ══════════════════════════════════════════════════════════════
 // LEAD SCORING
 // ══════════════════════════════════════════════════════════════
-function scoreLeadObj(l) {
-  let s=0;
-  if(l.phone) s+=25; if(l.email) s+=10;
-  const high=["40yd","30yd","demolition","construction","commercial","roofing"];
-  const med =["20yd","junk removal","renovation","cleanout"];
-  const svc=(l.service||"").toLowerCase();
-  if(high.some(k=>svc.includes(k))) s+=30; else if(med.some(k=>svc.includes(k))) s+=20; else if(l.service) s+=10;
-  if((l.city||"").toLowerCase().includes("florence")) s+=20; else if(l.city) s+=10;
-  const ml=(l.message||"").length; if(ml>80) s+=15; else if(ml>20) s+=8;
-  if(l.source==="organic") s+=10; if(l.source==="direct") s+=5;
-  return Math.min(s,100);
-}
 const scoreColor = s => s>=75?C.green:s>=45?C.amber:C.red;
 const scoreLabel = s => s>=75?"🔥 Hot":s>=45?"⚡ Warm":"❄️ Cold";
 
@@ -311,7 +252,7 @@ const crmScoreLabel = s => s==="hot"?"🔥 Hot":s==="warm"?"⚡ Warm":"❄️ Co
 const statusColor   = s => ({new:C.blue,contacted:C.amber,qualified:C.green,delivered:C.purple,rejected:C.red,expired:C.muted})[s]||C.muted;
 const statusLabel   = s => ({new:"New",contacted:"Contacted",qualified:"Qualified",delivered:"Delivered",rejected:"Rejected",expired:"Expired"})[s]||s;
 
-function LeadsDashboard({gh, flash}) {
+function LeadsDashboard({flash}) {
   const crmUrl   = ENV_CRM_URL;
   const crmToken = ENV_CRM_TOKEN;
 
@@ -787,7 +728,7 @@ function LeadsDashboard({gh, flash}) {
 // ══════════════════════════════════════════════════════════════
 // BUYER CRM — with OUTREACH AUTOMATION ENGINE
 // ══════════════════════════════════════════════════════════════
-function BuyerCRM({gh, flash}) {
+function BuyerCRM({flash}) {
   // ── D1 CRM API config ──
   const crmUrl   = ENV_CRM_URL;
   const crmToken = ENV_CRM_TOKEN;
@@ -805,6 +746,7 @@ function BuyerCRM({gh, flash}) {
   const [outreachType, setOutreachType]= useState("email");
   const [outreachText, setOutreachText]= useState("");
   const [generating,   setGenerating]  = useState(false);
+  const [showOutreachModal, setShowOutreachModal] = useState(false);
   const [loading,      setLoading]     = useState(false);
   const [syncing,      setSyncing]     = useState(false);
   const [filter,       setFilter]      = useState("qualified");
@@ -1078,7 +1020,7 @@ function BuyerCRM({gh, flash}) {
   }
 
   async function generate(biz, type) {
-    setGenerating(true); setOutreachBiz(biz); setOutreachType(type); setOutreachText(""); setCrmView("outreach");
+    setGenerating(true); setOutreachBiz(biz); setOutreachType(type); setOutreachText(""); setShowOutreachModal(true);
     try { const text=await generateOutreach(biz,type); setOutreachText(text); }
     catch(e) { setOutreachText(`Error: ${e.message}`); }
     setGenerating(false);
@@ -1102,7 +1044,7 @@ function BuyerCRM({gh, flash}) {
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {/* CRM Sub-tabs */}
       <div style={{display:"flex",gap:4,padding:"0.45rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center"}}>
-        {[["today",`⚡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","🗂 Pipeline"],["prospects","🔍 Prospects"],["sequences","🔄 Sequences"],["outreach","✍️ AI Draft"]].map(([k,l])=>(
+        {[["today",`⚡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","🗂 Pipeline"],["prospects","🔍 Prospects"],["sequences","🔄 Sequences"]].map(([k,l])=>(
           <button key={k} onClick={()=>setCrmView(k)}
             style={{...btnBase,padding:"0.25rem 0.7rem",fontSize:11,
               background:crmView===k?"rgba(56,189,248,0.15)":"transparent",
@@ -1616,185 +1558,50 @@ function BuyerCRM({gh, flash}) {
         </div>
       )}
 
-      {/* ══════════ OUTREACH / AI DRAFT VIEW ══════════ */}
-      {crmView==="outreach"&&(
-        <div style={{flex:1,display:"flex",flexDirection:"column",padding:"0.85rem",gap:"0.65rem",overflow:"auto"}}>
-          <div style={{display:"flex",gap:"0.45rem",alignItems:"center",flexWrap:"wrap"}}>
-            {outreachBiz&&<div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{outreachBiz.name}</div>}
-            <div style={{display:"flex",gap:3}}>
-              {["email","coldcall","sms","letter"].map(t=>(
-                <button key={t} onClick={()=>outreachBiz&&generate(outreachBiz,t)}
-                  style={{...btnBase,padding:"0.22rem 0.6rem",fontSize:10,
-                    background:outreachType===t?"rgba(56,189,248,0.15)":"transparent",
-                    color:outreachType===t?C.blue:C.muted,border:`1px solid ${outreachType===t?"rgba(56,189,248,0.3)":"transparent"}`}}>
-                  {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
-                </button>
-              ))}
+      {/* ══════════ OUTREACH / AI DRAFT MODAL ══════════ */}
+      {showOutreachModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={e=>{if(e.target===e.currentTarget)setShowOutreachModal(false);}}>
+          <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:14,width:"95%",maxWidth:600,maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{display:"flex",gap:"0.45rem",alignItems:"center",flexWrap:"wrap",padding:"0.85rem",borderBottom:`1px solid ${C.border}`}}>
+              {outreachBiz&&<div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{outreachBiz.name}</div>}
+              <div style={{display:"flex",gap:3}}>
+                {["email","coldcall","sms","letter"].map(t=>(
+                  <button key={t} onClick={()=>outreachBiz&&generate(outreachBiz,t)}
+                    style={{...btnBase,padding:"0.22rem 0.6rem",fontSize:10,
+                      background:outreachType===t?"rgba(56,189,248,0.15)":"transparent",
+                      color:outreachType===t?C.blue:C.muted,border:`1px solid ${outreachType===t?"rgba(56,189,248,0.3)":"transparent"}`}}>
+                    {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
+                  </button>
+                ))}
+              </div>
+              {outreachText&&<button onClick={()=>{navigator.clipboard.writeText(outreachText);flash("Copied!");}}
+                style={{...btnBase,background:C.green,color:"#fff",fontSize:10,marginLeft:"auto"}}>📋 Copy</button>}
+              <button onClick={()=>setShowOutreachModal(false)}
+                style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.25rem 0.5rem",fontSize:12,...(outreachText?{}:{marginLeft:"auto"})}}>✕</button>
             </div>
-            {outreachText&&<button onClick={()=>{navigator.clipboard.writeText(outreachText);flash("Copied!");}}
-              style={{...btnBase,background:C.green,color:"#fff",fontSize:10,marginLeft:"auto"}}>📋 Copy</button>}
+            <div style={{flex:1,padding:"0.85rem",overflow:"auto"}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem",minHeight:180,position:"relative"}}>
+                {generating
+                  ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.5rem",minHeight:160}}>
+                      <div style={{fontSize:26,animation:"pulse 0.8s infinite"}}>✍️</div>
+                      <div style={{fontSize:12,color:C.blue}}>Generating…</div>
+                    </div>
+                  :<textarea value={outreachText} onChange={e=>setOutreachText(e.target.value)}
+                      style={{width:"100%",minHeight:160,background:"transparent",border:"none",color:C.text,fontSize:12,fontFamily:"'Courier New',monospace",lineHeight:1.8,outline:"none",resize:"vertical"}}
+                      placeholder="Select a company from Pipeline or Prospects and click an outreach type…"/>
+                }
+              </div>
+              {outreachBiz?.formatted_phone_number&&outreachType==="coldcall"&&(
+                <a href={`tel:+1${cleanPhone(outreachBiz.formatted_phone_number)}`}
+                   style={{...btnBase,background:C.green,color:"#fff",fontSize:13,padding:"0.55rem 1.25rem",justifyContent:"center",textDecoration:"none",textAlign:"center",marginTop:"0.65rem",display:"flex"}}>
+                  📞 Call {outreachBiz.name} — {outreachBiz.formatted_phone_number}
+                </a>
+              )}
+            </div>
           </div>
-          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem",flex:1,minHeight:180,position:"relative"}}>
-            {generating
-              ?<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.5rem"}}>
-                  <div style={{fontSize:26,animation:"pulse 0.8s infinite"}}>✍️</div>
-                  <div style={{fontSize:12,color:C.blue}}>Generating…</div>
-                </div>
-              :<textarea value={outreachText} onChange={e=>setOutreachText(e.target.value)}
-                  style={{width:"100%",height:"100%",minHeight:160,background:"transparent",border:"none",color:C.text,fontSize:12,fontFamily:"'Courier New',monospace",lineHeight:1.8,outline:"none",resize:"none"}}
-                  placeholder="Select a company from Pipeline or Prospects and click an outreach type…"/>
-            }
-          </div>
-          {outreachBiz?.formatted_phone_number&&outreachType==="coldcall"&&(
-            <a href={`tel:+1${cleanPhone(outreachBiz.formatted_phone_number)}`}
-               style={{...btnBase,background:C.green,color:"#fff",fontSize:13,padding:"0.55rem 1.25rem",justifyContent:"center",textDecoration:"none",textAlign:"center"}}>
-              📞 Call {outreachBiz.name} — {outreachBiz.formatted_phone_number}
-            </a>
-          )}
         </div>
       )}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-// SITE EDITOR
-// ══════════════════════════════════════════════════════════════
-function SiteEditor({gh, flash, editorStatus, setEditorStatus}) {
-  const [files,setFiles]   = useState([]);
-  const [active,setActive] = useState(null);
-  const [search,setSearch] = useState("");
-  const [showMsg,setShowMsg]=useState(false);
-  const [msg,setMsg]       = useState("");
-  const [err,setErr]       = useState("");
-  const taRef              = useRef(null);
-
-  useEffect(()=>{
-    if(gh) gh.ls().then(data=>{
-      const sorted=[...data].sort((a,b)=>{
-        if(a.type!==b.type) return a.type==="dir"?-1:1;
-        return a.name.localeCompare(b.name);
-      });
-      setFiles(sorted);
-    }).catch(e=>setErr(e.message));
-  },[gh]);
-
-  async function openFile(f) {
-    setEditorStatus("loading"); setErr("");
-    try {
-      const {content,sha}=await gh.readFile(f.name);
-      setActive({name:f.name,content,orig:content,sha,dirty:false});
-    } catch(e){setErr(e.message);}
-    setEditorStatus("idle");
-  }
-
-  async function save() {
-    if(!active?.dirty||!msg.trim()) return;
-    setEditorStatus("saving"); setErr("");
-    try {
-      // Re-fetch SHA to avoid 422
-      let sha = active.sha;
-      try {
-        const fresh = await gh.getFile(active.name);
-        sha = fresh.sha;
-      } catch {}
-      const res=await gh.write(active.name,active.content,sha,msg.trim());
-      const newSha=res.content?.sha||active.sha;
-      setActive(a=>({...a,sha:newSha,orig:a.content,dirty:false}));
-      setEditorStatus("deployed");
-      flash(`✅ ${active.name} pushed — deploying (~60s)`);
-      setShowMsg(false);
-      setTimeout(()=>setEditorStatus("idle"),65000);
-    } catch(e){setErr(e.message);setEditorStatus("idle");}
-  }
-
-  function edit(v){setActive(a=>({...a,content:v,dirty:v!==a.orig}));}
-  const lines=active?(active.content.match(/\n/g)||[]).length+1:0;
-  const filtered=files.filter(f=>!search||f.name.toLowerCase().includes(search.toLowerCase()));
-
-  return(
-    <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-      <div style={{width:225,background:C.panel,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
-        <div style={{padding:"0.5rem",borderBottom:`1px solid ${C.border}`}}>
-          <input style={{...inp,padding:"0.33rem 0.6rem",fontSize:11}} placeholder="Search files…" value={search} onChange={e=>setSearch(e.target.value)}/>
-        </div>
-        <div style={{flex:1,overflowY:"auto"}}>
-          {filtered.map(f=>{
-            const isA=active?.name===f.name; const ok=canEdit(f.name);
-            return(
-              <div key={f.sha||f.name} onClick={()=>ok&&openFile(f)}
-                style={{display:"flex",alignItems:"center",gap:"0.4rem",padding:"0.42rem 0.65rem",cursor:ok?"pointer":"default",
-                  background:isA?"rgba(34,197,94,0.1)":"transparent",
-                  borderLeft:isA?`2px solid ${C.green}`:"2px solid transparent",opacity:ok?1:0.4}}
-                onMouseEnter={e=>{if(ok&&!isA)e.currentTarget.style.background="rgba(255,255,255,0.04)";}}
-                onMouseLeave={e=>{if(!isA)e.currentTarget.style.background="transparent";}}>
-                <span style={{fontSize:11,flexShrink:0}}>{fileEmoji(f.name)}</span>
-                <span style={{fontSize:11,color:isA?"#4ade80":C.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
-                <span style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>{kb(f.size||0)}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{padding:"0.45rem",borderTop:`1px solid ${C.border}`,fontSize:9,color:"rgba(255,255,255,0.2)",textAlign:"center"}}>{files.length} files</div>
-      </div>
-      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {active?(
-          <>
-            <div style={{background:"#172333",borderBottom:`1px solid ${C.border}`,padding:"0.38rem 1rem",display:"flex",alignItems:"center",gap:"0.6rem",flexShrink:0}}>
-              <span style={{fontSize:12}}>{fileEmoji(active.name)}</span>
-              <span style={{fontWeight:700,fontSize:12,color:"#fff"}}>{active.name}</span>
-              {active.dirty&&<span style={{fontSize:9,background:C.amber,color:"#fff",padding:"1px 6px",borderRadius:100,fontWeight:700}}>UNSAVED</span>}
-              <span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>{lines} lines · {kb(new Blob([active.content]).size)}</span>
-              <div style={{marginLeft:"auto",display:"flex",gap:"0.45rem",alignItems:"center"}}>
-                {err&&<span style={{fontSize:10,color:"#fca5a5"}}>⚠️ {err}</span>}
-                <a href={`https://cball8475.github.io/${active.name==="index.html"?"":active.name}`} target="_blank" rel="noreferrer"
-                  style={{...btnBase,background:"transparent",border:`1px solid rgba(255,255,255,0.1)`,color:C.muted,padding:"0.22rem 0.6rem",fontSize:10,textDecoration:"none"}}>Preview →</a>
-                <button onClick={()=>setShowMsg(v=>!v)} disabled={!active.dirty||editorStatus==="saving"}
-                  style={{...btnBase,background:active.dirty?C.green:"rgba(255,255,255,0.06)",color:active.dirty?"#fff":"rgba(255,255,255,0.3)",padding:"0.28rem 0.8rem",fontSize:11,opacity:editorStatus==="saving"?0.6:1}}>
-                  {editorStatus==="saving"?"Saving…":"💾 Save & Deploy"}
-                </button>
-              </div>
-            </div>
-            {showMsg&&(
-              <div style={{background:"#1e3347",borderBottom:`1px solid ${C.border}`,padding:"0.5rem 1rem",display:"flex",gap:"0.5rem",alignItems:"flex-start",flexShrink:0}}>
-                <div style={{flex:1}}>
-                  <input style={{...inp,padding:"0.35rem 0.65rem",fontSize:12}} value={msg} onChange={e=>setMsg(e.target.value)}
-                    onKeyDown={e=>e.key==="Enter"&&save()} autoFocus placeholder="Commit message…"/>
-                  <div style={{display:"flex",gap:"0.25rem",marginTop:"0.25rem",flexWrap:"wrap"}}>
-                    {[`Update ${active.name}`,"Fix content","SEO update","Phone/email update"].map(s=>(
-                      <button key={s} onClick={()=>setMsg(s)} style={{fontSize:9,padding:"2px 5px",borderRadius:100,background:"rgba(255,255,255,0.06)",border:`1px solid rgba(255,255,255,0.1)`,color:"rgba(255,255,255,0.4)",cursor:"pointer",fontFamily:"inherit"}}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={save} style={{...btnBase,background:C.green,color:"#fff",padding:"0.38rem 0.9rem",fontSize:12}}>🚀 Push</button>
-                <button onClick={()=>setShowMsg(false)} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.38rem 0.5rem"}}>✕</button>
-              </div>
-            )}
-            <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-              <div style={{background:"#0b1520",borderRight:`1px solid rgba(255,255,255,0.04)`,padding:"1rem 0.45rem 1rem 0.3rem",fontFamily:"'Courier New',monospace",fontSize:11,color:"rgba(255,255,255,0.18)",lineHeight:"1.6rem",textAlign:"right",minWidth:38,userSelect:"none",overflowY:"hidden",flexShrink:0,pointerEvents:"none"}}>
-                {Array.from({length:Math.min(lines,800)},(_,i)=><div key={i}>{i+1}</div>)}
-              </div>
-              <textarea ref={taRef} value={active.content} onChange={e=>edit(e.target.value)} spellCheck={false}
-                style={{flex:1,background:"#0d1b2a",color:"#dde6f0",border:"none",outline:"none",fontFamily:"'Courier New',monospace",fontSize:12,lineHeight:"1.6rem",padding:"1rem 1rem 1rem 0.65rem",resize:"none",overflowY:"auto",tabSize:2}}
-                onKeyDown={e=>{
-                  if(e.key==="Tab"){e.preventDefault();const s=e.target.selectionStart,end=e.target.selectionEnd;const v=active.content.slice(0,s)+"  "+active.content.slice(end);edit(v);setTimeout(()=>{e.target.selectionStart=e.target.selectionEnd=s+2;},0);}
-                  if((e.metaKey||e.ctrlKey)&&e.key==="s"){e.preventDefault();setShowMsg(true);}
-                }}/>
-            </div>
-            <div style={{height:21,background:"#0f1a28",borderTop:`1px solid rgba(255,255,255,0.05)`,display:"flex",alignItems:"center",gap:"1rem",padding:"0 1rem",fontSize:10,color:"rgba(255,255,255,0.2)"}}>
-              <span>{lines} lines</span><span>{kb(new Blob([active.content]).size)}</span>
-              <span style={{marginLeft:"auto"}}>Ctrl+S to save</span>
-            </div>
-          </>
-        ):(
-          <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.65rem",color:"rgba(255,255,255,0.2)"}}>
-            {editorStatus==="loading"
-              ?<><div style={{fontSize:30}}>⏳</div><div style={{fontSize:13}}>Loading…</div></>
-              :<><div style={{fontSize:42}}>📝</div><div style={{fontSize:14}}>Select a file to edit</div><div style={{fontSize:11,color:"rgba(255,255,255,0.1)"}}>HTML · CSS · JS · MD · JSON</div></>
-            }
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -1803,92 +1610,10 @@ function SiteEditor({gh, flash, editorStatus, setEditorStatus}) {
 // ROOT APP — CSS display toggle to prevent unmount/remount
 // ══════════════════════════════════════════════════════════════
 export default function App() {
-  const [token,setToken]               = useState(ENV_TOKEN);
-  const [repo,setRepo]                 = useState(ENV_REPO);
-  const [gh,setGh]                     = useState(null);
-  const [commit,setCommit]             = useState(null);
-  const [loginStatus,setLoginStatus]   = useState(ENV_TOKEN ? "loading" : "idle");
-  const [loginErr,setLoginErr]         = useState("");
   const [toast,setToast]               = useState(null);
-  const [mainTab,setMainTab]           = useState("crm");  // Default to CRM now
-  const [editorStatus,setEditorStatus] = useState("idle");
+  const [mainTab,setMainTab]           = useState("crm");
 
   const flash = useCallback((t,type="ok")=>{setToast({t,type});setTimeout(()=>setToast(null),3500);},[]);
-
-  useEffect(()=>{
-    if(ENV_TOKEN) connect(ENV_TOKEN, ENV_REPO);
-  },[]);
-
-  async function connect(tok=token, rep=repo) {
-    const t=tok.trim(); const r=rep.trim();
-    if(!t){setLoginErr("Token required");return;}
-    setLoginStatus("loading"); setLoginErr("");
-    try {
-      const api=new GH(t,r);
-      let repoData;
-      try { repoData=await api.ping(); }
-      catch(e) {
-        const m=e.message||"";
-        if(m.toLowerCase().includes("failed to fetch")||m.toLowerCase().includes("networkerror"))
-          setLoginErr("Network error — check connection");
-        else if(m.includes("404")||m.toLowerCase().includes("not found"))
-          setLoginErr(`Repo "${r}" not found`);
-        else if(m.includes("401")||m.toLowerCase().includes("bad credential"))
-          setLoginErr("Bad token — use classic token with 'repo' scope");
-        else setLoginErr(m);
-        setLoginStatus("idle"); return;
-      }
-      const [,commits]=await Promise.all([api.ls(),api.lastCommit()]);
-      setGh(api); setCommit(commits[0]||null); setLoginStatus("idle");
-      if(!ENV_TOKEN) flash(`Connected — ${repoData.full_name}`);
-    } catch(e){setLoginErr(e.message);setLoginStatus("idle");}
-  }
-
-  if(ENV_TOKEN && !gh && loginStatus==="loading") return (
-    <div style={{minHeight:"100vh",background:C.dark,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'IBM Plex Sans',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
-      <div style={{textAlign:"center",color:C.muted}}>
-        <img src="/logo.png" alt="Florence SC Services" style={{width:64,height:64,borderRadius:12,marginBottom:"1rem",animation:"pulse 1s infinite"}}/>
-        <div style={{fontSize:16,color:"#fff",fontWeight:700}}>Florence SC Services</div>
-        <div style={{fontSize:12,marginTop:"0.5rem"}}>Connecting…</div>
-        {loginErr&&<div style={{marginTop:"1rem",color:"#fca5a5",fontSize:12}}>⚠️ {loginErr}</div>}
-      </div>
-    </div>
-  );
-
-  if(!gh) return (
-    <div style={{minHeight:"100vh",background:C.dark,display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem",fontFamily:"'IBM Plex Sans',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input::placeholder{color:rgba(200,223,240,0.3);}`}</style>
-      <div style={{width:"100%",maxWidth:420}}>
-        <div style={{display:"flex",alignItems:"center",gap:"0.75rem",marginBottom:"2rem",justifyContent:"center"}}>
-          <img src="/logo.png" alt="Florence SC Services" style={{width:44,height:44,borderRadius:10}}/>
-          <div>
-            <div style={{fontWeight:800,fontSize:18,color:"#fff",letterSpacing:"-0.02em"}}>Florence SC Services</div>
-            <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",textTransform:"uppercase"}}>Outreach Engine</div>
-          </div>
-        </div>
-        <div style={{background:C.panel,borderRadius:14,border:`1px solid ${C.border}`,padding:"2rem"}}>
-          <h2 style={{fontWeight:800,fontSize:20,color:"#fff",margin:"0 0 0.25rem",letterSpacing:"-0.02em"}}>Connect to GitHub</h2>
-          <p style={{fontSize:12,color:C.muted,marginBottom:"1.5rem",lineHeight:1.6}}>Site editor, leads dashboard, buyer CRM, and outreach automation.</p>
-          <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
-            <div>
-              <label style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",display:"block",marginBottom:"0.3rem"}}>Repository</label>
-              <input style={inp} value={repo} onChange={e=>setRepo(e.target.value)}/>
-            </div>
-            <div>
-              <label style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",display:"block",marginBottom:"0.3rem"}}>Personal Access Token</label>
-              <input style={inp} type="password" value={token} onChange={e=>setToken(e.target.value)} onKeyDown={e=>e.key==="Enter"&&connect()} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"/>
-            </div>
-          </div>
-          {loginErr&&<div style={{marginTop:"0.75rem",background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"0.5rem 0.75rem",fontSize:11,color:"#fca5a5"}}>⚠️ {loginErr}</div>}
-          <button onClick={()=>connect()} disabled={loginStatus==="loading"}
-            style={{...btnBase,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",padding:"0.6rem 1.25rem",fontSize:14,width:"100%",justifyContent:"center",marginTop:"1.25rem",opacity:loginStatus==="loading"?0.6:1}}>
-            {loginStatus==="loading"?"Connecting…":"Connect →"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 
   return(
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:C.dark,fontFamily:"'IBM Plex Sans',sans-serif",overflow:"hidden"}}>
@@ -1896,9 +1621,8 @@ export default function App() {
       <div style={{height:46,background:C.panel,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:"0.65rem",padding:"0 1rem",flexShrink:0}}>
         <img src="/logo.png" alt="FSC" style={{width:24,height:24,borderRadius:5}}/>
         <span style={{fontWeight:800,fontSize:13,color:"#fff",letterSpacing:"-0.02em"}}>Florence SC</span>
-        <span style={{fontSize:10,color:C.muted,fontFamily:"'IBM Plex Mono'"}}>/ {repo}</span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
-          {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"],["editor","✍️ Site Editor"]].map(([key,label])=>(
+          {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"]].map(([key,label])=>(
             <button key={key} onClick={()=>setMainTab(key)}
               style={{...btnBase,padding:"0.25rem 0.75rem",fontSize:11,
                 background:mainTab===key?"rgba(56,189,248,0.15)":"transparent",
@@ -1908,14 +1632,6 @@ export default function App() {
             </button>
           ))}
         </div>
-        {editorStatus==="deployed"&&(
-          <div style={{display:"flex",alignItems:"center",gap:"0.3rem",fontSize:11,color:C.amber}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:C.amber,display:"inline-block",animation:"pulse 1s infinite"}}/>Deploying…
-          </div>
-        )}
-        {commit&&editorStatus!=="deployed"&&(
-          <span style={{fontSize:10,color:"rgba(255,255,255,0.2)"}}>Last commit: {ago(commit.commit?.author?.date)}</span>
-        )}
         <div style={{marginLeft:"auto",display:"flex",gap:"0.45rem"}}>
           <a href="https://florencescservices.com" target="_blank" rel="noreferrer"
             style={{...btnBase,background:"rgba(255,255,255,0.05)",color:C.muted,padding:"0.22rem 0.65rem",fontSize:11,textDecoration:"none"}}>
@@ -1924,14 +1640,11 @@ export default function App() {
         </div>
       </div>
       {/* CSS display toggle — prevents unmount/remount state loss */}
-      <div style={{display:mainTab==="editor"?"flex":"none",flex:1,overflow:"hidden"}}>
-        <SiteEditor gh={gh} flash={flash} editorStatus={editorStatus} setEditorStatus={setEditorStatus}/>
-      </div>
       <div style={{display:mainTab==="leads"?"flex":"none",flex:1,overflow:"hidden"}}>
-        <LeadsDashboard gh={gh} flash={flash}/>
+        <LeadsDashboard flash={flash}/>
       </div>
       <div style={{display:mainTab==="crm"?"flex":"none",flex:1,overflow:"hidden"}}>
-        <BuyerCRM gh={gh} flash={flash}/>
+        <BuyerCRM flash={flash}/>
       </div>
       {toast&&(
         <div style={{position:"fixed",bottom:20,right:20,background:toast.type==="ok"?C.green:toast.type==="info"?C.blue:C.red,
