@@ -304,187 +304,482 @@ async function searchGooglePlaces(keyword, location, apiKey) {
 // ══════════════════════════════════════════════════════════════
 // LEADS DASHBOARD
 // ══════════════════════════════════════════════════════════════
+// ── D1 CRM score helpers ──
+const crmScoreColor = s => s==="hot"?C.green:s==="warm"?C.amber:C.red;
+const crmScoreIcon  = s => s==="hot"?"🔥":s==="warm"?"⚡":"❄️";
+const crmScoreLabel = s => s==="hot"?"🔥 Hot":s==="warm"?"⚡ Warm":"❄️ Cold";
+const statusColor   = s => ({new:C.blue,contacted:C.amber,qualified:C.green,delivered:C.purple,rejected:C.red,expired:C.muted})[s]||C.muted;
+const statusLabel   = s => ({new:"New",contacted:"Contacted",qualified:"Qualified",delivered:"Delivered",rejected:"Rejected",expired:"Expired"})[s]||s;
+
 function LeadsDashboard({gh, flash}) {
-  const [leads,setLeads]     = useState(null);
-  const [sha,setSha]         = useState(null);
-  const [loading,setLoading] = useState(false);
-  const [filter,setFilter]   = useState("all");
+  const crmUrl   = ENV_CRM_URL;
+  const crmToken = ENV_CRM_TOKEN;
+
+  const [leads,setLeads]             = useState([]);
+  const [stats,setStats]             = useState(null);
+  const [operators,setOperators]     = useState([]);
+  const [pilotLeads,setPilotLeads]   = useState([]);
+  const [loading,setLoading]         = useState(true);
+  const [err,setErr]                 = useState("");
+  const [selected,setSelected]       = useState(null);
+  const [subTab,setSubTab]           = useState("leads"); // leads | pilots | stats
+
+  // Filters
+  const [fScore,setFScore]   = useState("all");
+  const [fStatus,setFStatus] = useState("all");
+  const [fSource,setFSource] = useState("all");
   const [search,setSearch]   = useState("");
-  const [selected,setSelected] = useState(null);
-  const [err,setErr]         = useState("");
 
-  useEffect(()=>{ if(gh) loadLeads(); },[gh]);
+  // Assignment modal
+  const [assignLeadId,setAssignLeadId] = useState(null);
+  const [assignTo,setAssignTo]         = useState("");
 
-  async function loadLeads() {
+  useEffect(()=>{ loadAll(); },[]);
+
+  async function crm(path, method="GET", body=null) {
+    return crmFetch(crmUrl, crmToken, path, method, body);
+  }
+
+  async function loadAll() {
     setLoading(true); setErr("");
     try {
-      const {content,sha:s} = await gh.readFile("data/leads.json");
-      const parsed = JSON.parse(content);
-      const scored = parsed.map(l=>({...l,score:l.score??scoreLeadObj(l)})).sort((a,b)=>b.score-a.score);
-      setLeads(scored); setSha(s);
+      const [leadsRes, statsRes, prospectsRes, pilotsRes] = await Promise.all([
+        crm("/leads?limit=200"),
+        crm("/stats"),
+        crm("/prospects?operator_status=active"),
+        crm("/pilot-leads"),
+      ]);
+      setLeads(leadsRes.leads || []);
+      setStats(statsRes);
+      setOperators((prospectsRes.prospects || []).map(normalizeProspect));
+      setPilotLeads(pilotsRes.pilot_leads || []);
     } catch(e) {
-      if(e.message.includes("404")||e.message.includes("Not Found")) {
-        await gh.write("data/leads.json","[]",null,"Initialize leads database");
-        setLeads([]); flash("Created data/leads.json ✅");
-      } else { setErr(e.message); }
+      setErr(e.message);
+      flash("⚠️ CRM API error","error");
     }
     setLoading(false);
   }
 
-  async function markContacted(id) {
-    const updated = leads.map(l=>l.id===id?{...l,contacted:true,contactedAt:new Date().toISOString()}:l);
-    const {sha:s} = await gh.readFile("data/leads.json");
-    await gh.write("data/leads.json",JSON.stringify(updated,null,2),s,"Mark lead contacted");
-    setLeads(updated); setSha(s); flash("Marked as contacted ✅");
+  async function updateLeadStatus(id, status) {
+    try {
+      await crm(`/leads/${id}`, "PATCH", { status });
+      setLeads(prev => prev.map(l => l.id===id ? {...l, status} : l));
+      if(selected?.id===id) setSelected(prev => ({...prev, status}));
+      flash(`Lead → ${statusLabel(status)} ✅`);
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
+  }
+
+  async function assignLead(leadId, prospectId) {
+    try {
+      const res = await crm(`/leads/${leadId}/assign`, "POST", { prospect_id: prospectId });
+      await loadAll();
+      setAssignLeadId(null);
+      flash("Lead reassigned ✅");
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
   async function deleteLead(id) {
-    if(!confirm("Delete this lead?")) return;
-    const updated = leads.filter(l=>l.id!==id);
-    await gh.write("data/leads.json",JSON.stringify(updated,null,2),sha,"Delete lead");
-    setLeads(updated); setSelected(null); flash("Lead deleted");
+    if(!confirm("Delete this lead permanently?")) return;
+    try {
+      await crm(`/leads/${id}`, "DELETE");
+      setLeads(prev => prev.filter(l => l.id!==id));
+      if(selected?.id===id) setSelected(null);
+      flash("Lead deleted");
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
-  const filtered=(leads||[]).filter(l=>{
-    const s=l.score||0;
-    if(filter==="hot"&&s<75) return false;
-    if(filter==="warm"&&(s<45||s>=75)) return false;
-    if(filter==="cold"&&s>=45) return false;
-    if(search&&!JSON.stringify(l).toLowerCase().includes(search.toLowerCase())) return false;
+  // Filtering
+  const filtered = leads.filter(l => {
+    if(fScore!=="all" && l.score!==fScore) return false;
+    if(fStatus!=="all" && l.status!==fStatus) return false;
+    if(fSource!=="all" && l.source!==fSource) return false;
+    if(search) {
+      const q = search.toLowerCase();
+      const hay = [l.name,l.phone,l.email,l.project_type,l.notes].filter(Boolean).join(" ").toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
     return true;
   });
 
-  const hot   = (leads||[]).filter(l=>(l.score||0)>=75).length;
-  const warm  = (leads||[]).filter(l=>(l.score||0)>=45&&(l.score||0)<75).length;
-  const cold  = (leads||[]).filter(l=>(l.score||0)<45).length;
-  const today = (leads||[]).filter(l=>l.date&&new Date(l.date).toDateString()===new Date().toDateString()).length;
+  // Counts
+  const hotCount  = leads.filter(l=>l.score==="hot").length;
+  const warmCount = leads.filter(l=>l.score==="warm").length;
+  const coldCount = leads.filter(l=>l.score==="cold").length;
+  const newCount  = leads.filter(l=>l.status==="new").length;
+  const todayCount = leads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
 
-  if(!leads) return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"1rem"}}>
-      {loading
-        ? <><div style={{fontSize:36,animation:"pulse 1s infinite"}}>⏳</div><div style={{fontSize:14,color:C.muted}}>Loading leads…</div></>
-        : <><div style={{fontSize:48}}>📊</div>
-            <div style={{fontSize:16,color:"#fff",fontWeight:700}}>Leads Dashboard</div>
-            <div style={{fontSize:13,color:C.muted}}>Reads from <code style={{background:C.card,padding:"2px 6px",borderRadius:4}}>data/leads.json</code></div>
-            {err&&<div style={{color:"#fca5a5",fontSize:12}}>⚠️ {err}</div>}
-            <button onClick={loadLeads} style={{...btnBase,background:C.green,color:"#fff",padding:"0.6rem 1.5rem",fontSize:14}}>Load Leads →</button>
-          </>
-      }
+  const operatorName = (id) => {
+    if(!id) return "Unassigned";
+    const op = operators.find(o=>o.place_id===id || o.id===id);
+    return op ? (op.short_name || op.name || "Unknown") : "Unknown";
+  };
+
+  // ── Loading state ──
+  if(loading && leads.length===0) return (
+    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"0.75rem"}}>
+      <div style={{fontSize:36,animation:"pulse 1s infinite"}}>📊</div>
+      <div style={{fontSize:14,color:C.muted}}>Loading leads from CRM…</div>
+      {err&&<div style={{color:"#fca5a5",fontSize:12}}>⚠️ {err}</div>}
     </div>
   );
 
+  // ── Main render ──
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{display:"flex",gap:"0.65rem",padding:"0.75rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[{label:"Total",value:(leads||[]).length,color:C.blue},{label:"Today",value:today,color:C.blue},
-          {label:"🔥 Hot",value:hot,color:C.green},{label:"⚡ Warm",value:warm,color:C.amber},{label:"❄️ Cold",value:cold,color:C.muted}
+      {/* ── STATS BAR ── */}
+      <div style={{display:"flex",gap:"0.5rem",padding:"0.65rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center"}}>
+        {[
+          {label:"Total",value:leads.length,color:C.blue,icon:"📋"},
+          {label:"New",value:newCount,color:newCount>0?C.blue:C.muted,icon:"🆕"},
+          {label:"Today",value:todayCount,color:todayCount>0?C.purple:C.muted,icon:"📅"},
+          {label:"Hot",value:hotCount,color:C.green,icon:"🔥"},
+          {label:"Warm",value:warmCount,color:C.amber,icon:"⚡"},
+          {label:"Cold",value:coldCount,color:C.muted,icon:"❄️"},
+          {label:"Operators",value:operators.length,color:C.purple,icon:"🚛"},
         ].map(s=>(
-          <div key={s.label} style={{background:C.card,borderRadius:10,padding:"0.55rem 0.85rem",flex:1,textAlign:"center",border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:18,fontWeight:800,color:s.color}}>{s.value}</div>
-            <div style={{fontSize:9,color:C.muted,marginTop:2}}>{s.label}</div>
+          <div key={s.label} style={{background:C.card,borderRadius:8,padding:"0.4rem 0.7rem",flex:1,textAlign:"center",border:`1px solid ${C.border}`,minWidth:0}}>
+            <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
+            <div style={{fontSize:8,color:C.muted,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.icon} {s.label}</div>
           </div>
         ))}
-        <button onClick={loadLeads} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0 0.7rem",fontSize:12}}>↺</button>
+        <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.35rem 0.6rem",fontSize:11,flexShrink:0}}>↺</button>
       </div>
-      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        <div style={{width:280,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
-          <div style={{padding:"0.45rem",borderBottom:`1px solid ${C.border}`}}>
-            <input style={{...inp,padding:"0.3rem 0.6rem",fontSize:11}} placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/>
-            <div style={{display:"flex",gap:2,marginTop:4}}>
-              {["all","hot","warm","cold"].map(f=>(
-                <button key={f} onClick={()=>setFilter(f)}
-                  style={{...btnBase,flex:1,justifyContent:"center",padding:"0.2rem",fontSize:10,
-                    background:filter===f?"rgba(255,255,255,0.1)":"transparent",
-                    color:filter===f?"#fff":C.muted,border:`1px solid ${filter===f?"rgba(255,255,255,0.2)":"transparent"}`}}>
-                  {f.charAt(0).toUpperCase()+f.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{flex:1,overflowY:"auto"}}>
-            {filtered.length===0
-              ? <div style={{padding:"2rem",textAlign:"center",color:C.muted,fontSize:13}}>No leads</div>
-              : filtered.map(lead=>{
-                  const s=lead.score||0; const isSel=selected?.id===lead.id;
-                  return (
-                    <div key={lead.id} onClick={()=>setSelected(lead)}
-                      style={{padding:"0.65rem",borderBottom:`1px solid ${C.border}`,cursor:"pointer",
-                        background:isSel?"rgba(56,189,248,0.08)":"transparent",
-                        borderLeft:isSel?`3px solid ${C.blue}`:"3px solid transparent",opacity:lead.contacted?0.5:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:"0.4rem",marginBottom:3}}>
-                        <span style={{fontSize:9,fontWeight:700,color:scoreColor(s),background:`${scoreColor(s)}20`,padding:"1px 6px",borderRadius:100}}>{scoreLabel(s)}</span>
-                        <span style={{fontSize:10,fontWeight:800,color:scoreColor(s),marginLeft:"auto"}}>{s}</span>
-                        {lead.contacted&&<span style={{fontSize:9,color:C.muted}}>✓</span>}
-                      </div>
-                      <div style={{fontSize:12,color:"#fff",fontWeight:600}}>{lead.name||"Anonymous"}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{lead.service||"No service"}</div>
-                      <div style={{fontSize:9,color:"rgba(255,255,255,0.2)",marginTop:2}}>{lead.city} · {fmtDate(lead.date)}</div>
-                    </div>
-                  );
-                })
-            }
-          </div>
-        </div>
-        <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
-          {selected ? (
-            <div style={{display:"flex",flexDirection:"column",gap:"0.85rem"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <h2 style={{color:"#fff",fontSize:17,fontWeight:800,margin:"0 0 0.25rem"}}>{selected.name||"Anonymous"}</h2>
-                  <span style={{fontSize:11,fontWeight:700,color:scoreColor(selected.score),background:`${scoreColor(selected.score)}20`,padding:"2px 10px",borderRadius:100}}>
-                    {scoreLabel(selected.score)} · {selected.score}/100
-                  </span>
-                </div>
-                <div style={{display:"flex",gap:"0.4rem"}}>
-                  {!selected.contacted&&<button onClick={()=>markContacted(selected.id)} style={{...btnBase,background:C.green,color:"#fff",padding:"0.3rem 0.75rem",fontSize:11}}>✓ Contacted</button>}
-                  <button onClick={()=>deleteLead(selected.id)} style={{...btnBase,background:"rgba(239,68,68,0.15)",color:C.red,padding:"0.3rem 0.75rem",fontSize:11}}>🗑</button>
-                </div>
-              </div>
-              <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
-                <div style={{background:"rgba(0,0,0,0.3)",borderRadius:4,height:5,marginBottom:"0.35rem"}}>
-                  <div style={{width:`${selected.score}%`,height:"100%",background:scoreColor(selected.score),borderRadius:4}}/>
-                </div>
-                <div style={{fontSize:11,color:C.muted}}>{selected.score>=75?"Priority call":selected.score>=45?"Follow up within 24h":"Low priority"}</div>
-              </div>
-              <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>CONTACT</div>
-                {selected.phone&&(
-                  <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                    <span style={{fontSize:10,color:C.muted,width:55}}>Phone</span>
-                    <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.phone}</span>
-                    <a href={`tel:+1${cleanPhone(selected.phone)}`} style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
-                  </div>
-                )}
-                {selected.email&&(
-                  <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                    <span style={{fontSize:10,color:C.muted,width:55}}>Email</span>
-                    <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.email}</span>
-                    <a href={`mailto:${selected.email}`} style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️ Email</a>
-                  </div>
-                )}
-                {[{label:"City",value:selected.city},{label:"Source",value:selected.source},{label:"Date",value:fmtDate(selected.date)}
-                ].map(row=>row.value&&(
-                  <div key={row.label} style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                    <span style={{fontSize:10,color:C.muted,width:55}}>{row.label}</span>
-                    <span style={{fontSize:12,color:"#fff",flex:1}}>{row.value}</span>
-                  </div>
+
+      {/* ── SUB-TAB BAR ── */}
+      <div style={{display:"flex",gap:3,padding:"0.4rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        {[["leads","📋 All Leads"],["pilots","🧪 Pilot Tracker"],["stats","📈 Stats"]].map(([key,label])=>(
+          <button key={key} onClick={()=>setSubTab(key)}
+            style={{...btnBase,padding:"0.25rem 0.7rem",fontSize:10,
+              background:subTab===key?"rgba(56,189,248,0.12)":"transparent",
+              color:subTab===key?C.blue:C.muted,
+              border:`1px solid ${subTab===key?"rgba(56,189,248,0.25)":"transparent"}`}}>
+            {label}
+          </button>
+        ))}
+        {err&&<span style={{fontSize:10,color:C.red,marginLeft:"auto"}}>⚠️ {err}</span>}
+      </div>
+
+      {/* ════════ LEADS TAB ════════ */}
+      {subTab==="leads"&&(
+        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+          {/* ── LEFT: Lead list ── */}
+          <div style={{width:300,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
+            {/* Search + filters */}
+            <div style={{padding:"0.45rem",borderBottom:`1px solid ${C.border}`}}>
+              <input style={{...inp,padding:"0.3rem 0.6rem",fontSize:11}} placeholder="Search name, phone, email…" value={search} onChange={e=>setSearch(e.target.value)}/>
+              <div style={{display:"flex",gap:2,marginTop:4}}>
+                {["all","hot","warm","cold"].map(f=>(
+                  <button key={f} onClick={()=>setFScore(f)}
+                    style={{...btnBase,flex:1,justifyContent:"center",padding:"0.2rem",fontSize:9,
+                      background:fScore===f?"rgba(255,255,255,0.1)":"transparent",
+                      color:fScore===f?"#fff":C.muted,border:`1px solid ${fScore===f?"rgba(255,255,255,0.15)":"transparent"}`}}>
+                    {f==="all"?"All":crmScoreLabel(f)}
+                  </button>
                 ))}
               </div>
-              {(selected.service||selected.message)&&(
-                <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>REQUEST</div>
-                  {selected.service&&<div style={{fontSize:12,color:"#fff",marginBottom:4}}><span style={{color:C.muted}}>Service: </span>{selected.service}</div>}
-                  {selected.message&&<div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{selected.message}</div>}
+              <div style={{display:"flex",gap:2,marginTop:3}}>
+                {["all","new","contacted","delivered","rejected"].map(f=>(
+                  <button key={f} onClick={()=>setFStatus(f)}
+                    style={{...btnBase,flex:1,justifyContent:"center",padding:"0.15rem",fontSize:8,
+                      background:fStatus===f?"rgba(255,255,255,0.1)":"transparent",
+                      color:fStatus===f?"#fff":C.muted,border:`1px solid ${fStatus===f?"rgba(255,255,255,0.15)":"transparent"}`}}>
+                    {f==="all"?"All":statusLabel(f)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Lead rows */}
+            <div style={{flex:1,overflowY:"auto"}}>
+              {filtered.length===0
+                ? <div style={{padding:"2rem",textAlign:"center",color:C.muted,fontSize:12}}>No leads match filters</div>
+                : filtered.map(lead=>{
+                    const isSel = selected?.id===lead.id;
+                    return (
+                      <div key={lead.id} onClick={()=>setSelected(lead)}
+                        style={{padding:"0.6rem 0.65rem",borderBottom:`1px solid ${C.border}`,cursor:"pointer",
+                          background:isSel?"rgba(56,189,248,0.08)":"transparent",
+                          borderLeft:isSel?`3px solid ${C.blue}`:"3px solid transparent"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:"0.35rem",marginBottom:3}}>
+                          <span style={{fontSize:8,fontWeight:700,color:crmScoreColor(lead.score),background:`${crmScoreColor(lead.score)}20`,padding:"1px 6px",borderRadius:100}}>
+                            {crmScoreLabel(lead.score)}
+                          </span>
+                          <span style={{fontSize:8,fontWeight:600,color:statusColor(lead.status),background:`${statusColor(lead.status)}15`,padding:"1px 5px",borderRadius:100}}>
+                            {statusLabel(lead.status)}
+                          </span>
+                          {lead.is_pilot_lead===1&&<span style={{fontSize:8,color:C.purple}}>🧪</span>}
+                          <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",marginLeft:"auto"}}>#{lead.id}</span>
+                        </div>
+                        <div style={{fontSize:12,color:"#fff",fontWeight:600}}>{lead.name||"Anonymous"}</div>
+                        <div style={{fontSize:10,color:C.muted}}>{lead.project_type||lead.dumpster_size||"—"}</div>
+                        <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
+                          <span style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>{lead.source} · {fmtDate(lead.created_at)}</span>
+                          <span style={{fontSize:9,color:C.purple}}>{operatorName(lead.assigned_to).split(" ")[0]}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+              }
+            </div>
+          </div>
+
+          {/* ── RIGHT: Lead detail ── */}
+          <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
+            {selected ? (
+              <div style={{display:"flex",flexDirection:"column",gap:"0.85rem"}}>
+                {/* Header */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <h2 style={{color:"#fff",fontSize:17,fontWeight:800,margin:"0 0 0.3rem"}}>{selected.name||"Anonymous"}</h2>
+                    <div style={{display:"flex",gap:"0.35rem",flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,fontWeight:700,color:crmScoreColor(selected.score),background:`${crmScoreColor(selected.score)}18`,padding:"2px 10px",borderRadius:100}}>
+                        {crmScoreLabel(selected.score)}
+                      </span>
+                      <span style={{fontSize:11,fontWeight:700,color:statusColor(selected.status),background:`${statusColor(selected.status)}18`,padding:"2px 10px",borderRadius:100}}>
+                        {statusLabel(selected.status)}
+                      </span>
+                      {selected.is_pilot_lead===1&&(
+                        <span style={{fontSize:11,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 10px",borderRadius:100}}>🧪 Pilot #{selected.pilot_lead_number}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:"0.35rem"}}>
+                    <button onClick={()=>deleteLead(selected.id)} style={{...btnBase,background:"rgba(239,68,68,0.12)",color:C.red,padding:"0.25rem 0.6rem",fontSize:10}}>🗑</button>
+                  </div>
                 </div>
-              )}
+
+                {/* Contact card */}
+                <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>CONTACT</div>
+                  {selected.phone&&(
+                    <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                      <span style={{fontSize:10,color:C.muted,width:65}}>Phone</span>
+                      <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.phone}</span>
+                      <a href={`tel:+1${cleanPhone(selected.phone)}`} style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
+                    </div>
+                  )}
+                  {selected.email&&(
+                    <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                      <span style={{fontSize:10,color:C.muted,width:65}}>Email</span>
+                      <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.email}</span>
+                      <a href={`mailto:${selected.email}`} style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️ Email</a>
+                    </div>
+                  )}
+                  {[
+                    {label:"Source",value:selected.source},
+                    {label:"Size",value:selected.dumpster_size},
+                    {label:"Debris",value:selected.debris_type},
+                    {label:"Timeline",value:selected.timeline},
+                    {label:"Project",value:selected.project_type},
+                    {label:"Created",value:fmtDate(selected.created_at)},
+                  ].map(row=>row.value&&(
+                    <div key={row.label} style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                      <span style={{fontSize:10,color:C.muted,width:65}}>{row.label}</span>
+                      <span style={{fontSize:12,color:"#fff",flex:1}}>{row.value}</span>
+                    </div>
+                  ))}
+                  {selected.notes&&(
+                    <div style={{padding:"0.4rem 0 0"}}>
+                      <span style={{fontSize:10,color:C.muted}}>Notes: </span>
+                      <span style={{fontSize:11,color:C.text}}>{selected.notes}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Assignment card */}
+                <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>ASSIGNED TO</div>
+                  <div style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                    <span style={{fontSize:13,color:selected.assigned_to?"#fff":C.red,fontWeight:700}}>
+                      {selected.assigned_to ? `🚛 ${operatorName(selected.assigned_to)}` : "⚠️ Unassigned"}
+                    </span>
+                    <button onClick={()=>{setAssignLeadId(selected.id);setAssignTo(selected.assigned_to||"");}}
+                      style={{...btnBase,background:"rgba(167,139,250,0.12)",color:C.purple,padding:"0.2rem 0.6rem",fontSize:10,marginLeft:"auto"}}>
+                      ✏️ Reassign
+                    </button>
+                  </div>
+                  {selected.assigned_at&&(
+                    <div style={{fontSize:9,color:C.muted,marginTop:4}}>Assigned: {fmtDate(selected.assigned_at)}</div>
+                  )}
+                </div>
+
+                {/* Status actions */}
+                <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>UPDATE STATUS</div>
+                  <div style={{display:"flex",gap:"0.35rem",flexWrap:"wrap"}}>
+                    {["new","contacted","qualified","delivered","rejected"].map(s=>(
+                      <button key={s} onClick={()=>updateLeadStatus(selected.id,s)}
+                        style={{...btnBase,padding:"0.25rem 0.6rem",fontSize:10,
+                          background:selected.status===s?`${statusColor(s)}25`:"rgba(255,255,255,0.04)",
+                          color:selected.status===s?"#fff":C.muted,
+                          border:`1px solid ${selected.status===s?statusColor(s):"transparent"}`}}>
+                        {statusLabel(s)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Call recording (CallRail leads) */}
+                {selected.call_recording_url&&(
+                  <div style={{background:C.card,borderRadius:10,padding:"0.8rem",border:`1px solid ${C.border}`}}>
+                    <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>CALL RECORDING</div>
+                    <div style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                      <span style={{fontSize:11,color:C.text}}>Duration: {selected.call_duration||0}s</span>
+                      <a href={selected.call_recording_url} target="_blank" rel="noreferrer"
+                        style={{...btnBase,background:"rgba(56,189,248,0.12)",color:C.blue,padding:"0.2rem 0.6rem",fontSize:10,textDecoration:"none",marginLeft:"auto"}}>
+                        ▶ Listen
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,flexDirection:"column",gap:"0.5rem"}}>
+                <div style={{fontSize:32}}>👈</div>
+                <div style={{fontSize:13}}>Select a lead to view details</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ════════ PILOT TRACKER TAB ════════ */}
+      {subTab==="pilots"&&(
+        <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+            <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:0}}>🧪 Pilot Lead Tracker</h3>
+            <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.3rem 0.6rem",fontSize:10}}>↺ Refresh</button>
+          </div>
+          {pilotLeads.length===0 ? (
+            <div style={{textAlign:"center",padding:"3rem",color:C.muted}}>
+              <div style={{fontSize:36,marginBottom:"0.5rem"}}>🧪</div>
+              <div style={{fontSize:14}}>No pilot leads yet</div>
+              <div style={{fontSize:11,marginTop:"0.3rem"}}>Assign pilot leads via the API to start tracking</div>
             </div>
           ) : (
-            <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,flexDirection:"column",gap:"0.5rem"}}>
-              <div style={{fontSize:32}}>👈</div><div style={{fontSize:13}}>Select a lead</div>
+            <div style={{display:"flex",flexDirection:"column",gap:"0.65rem"}}>
+              {pilotLeads.map(pl=>(
+                <div key={pl.id} style={{background:C.card,borderRadius:10,padding:"0.85rem",border:`1px solid ${C.border}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.4rem"}}>
+                    <div>
+                      <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>{pl.operator_name}</span>
+                      <span style={{fontSize:10,color:C.muted,marginLeft:"0.5rem"}}>Pilot #{pl.lead_number}</span>
+                    </div>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:100,
+                      color:pl.outcome==="pending"?C.amber:pl.outcome==="won"?C.green:C.red,
+                      background:pl.outcome==="pending"?"rgba(245,158,11,0.12)":pl.outcome==="won"?"rgba(34,197,94,0.12)":"rgba(239,68,68,0.12)"}}>
+                      {pl.outcome==="pending"?"⏳ Pending":pl.outcome==="won"?"✅ Won":pl.outcome==="lost"?"❌ Lost":pl.outcome}
+                    </span>
+                  </div>
+                  <div style={{display:"flex",gap:"1rem",fontSize:11,color:C.muted}}>
+                    <span>Lead: <span style={{color:C.text}}>{pl.lead_name||"#"+pl.lead_id}</span></span>
+                    <span>Score: <span style={{color:crmScoreColor(pl.lead_score)}}>{crmScoreLabel(pl.lead_score)}</span></span>
+                    <span>Source: <span style={{color:C.text}}>{pl.lead_source||"—"}</span></span>
+                    <span>Sent: <span style={{color:C.text}}>{fmtDate(pl.date_sent)}</span></span>
+                  </div>
+                  {pl.notes&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>📝 {pl.notes}</div>}
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ════════ STATS TAB ════════ */}
+      {subTab==="stats"&&(
+        <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
+          <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:"0 0 1rem"}}>📈 CRM Stats</h3>
+          {stats ? (
+            <div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
+              {/* Big numbers row */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"0.65rem"}}>
+                {[
+                  {label:"Total Prospects",value:stats.total_prospects,color:C.blue,icon:"👥"},
+                  {label:"With Email",value:stats.with_email,color:C.green,icon:"✉️"},
+                  {label:"In Sequences",value:stats.enrolled,color:C.amber,icon:"🔄"},
+                  {label:"Active Operators",value:stats.active_operators,color:C.purple,icon:"🚛"},
+                  {label:"Total Leads",value:stats.total_leads,color:C.blue,icon:"📋"},
+                  {label:"Active Pilots",value:stats.active_pilots,color:C.purple,icon:"🧪"},
+                ].map(s=>(
+                  <div key={s.label} style={{background:C.card,borderRadius:10,padding:"0.75rem",border:`1px solid ${C.border}`,textAlign:"center"}}>
+                    <div style={{fontSize:11,marginBottom:"0.2rem"}}>{s.icon}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.value}</div>
+                    <div style={{fontSize:9,color:C.muted,marginTop:2}}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Breakdowns */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.65rem"}}>
+                {[
+                  {title:"Leads by Score",data:stats.leads_by_score,colorFn:s=>crmScoreColor(s.score),labelFn:s=>`${crmScoreIcon(s.score)} ${s.score}`},
+                  {title:"Leads by Status",data:stats.leads_by_status,colorFn:s=>statusColor(s.status),labelFn:s=>statusLabel(s.status)},
+                  {title:"Leads by Source",data:stats.leads_by_source,colorFn:()=>C.blue,labelFn:s=>s.source||"Unknown"},
+                ].map(group=>(
+                  <div key={group.title} style={{background:C.card,borderRadius:10,padding:"0.75rem",border:`1px solid ${C.border}`}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:"0.05em",marginBottom:"0.5rem"}}>{group.title}</div>
+                    {(group.data||[]).length===0
+                      ? <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>No data</div>
+                      : (group.data||[]).map((item,i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.25rem 0",borderBottom:`1px solid rgba(255,255,255,0.04)`}}>
+                          <span style={{fontSize:11,color:group.colorFn(item)}}>{group.labelFn(item)}</span>
+                          <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{item.c}</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                ))}
+              </div>
+
+              {/* Prospects by stage */}
+              <div style={{background:C.card,borderRadius:10,padding:"0.75rem",border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:"0.05em",marginBottom:"0.5rem"}}>Prospects by Stage</div>
+                <div style={{display:"flex",gap:"0.75rem",flexWrap:"wrap"}}>
+                  {(stats.prospects_by_stage||[]).map((item,i)=>(
+                    <div key={i} style={{textAlign:"center"}}>
+                      <div style={{fontSize:18,fontWeight:800,color:C.blue}}>{item.c}</div>
+                      <div style={{fontSize:9,color:C.muted}}>{item.stage}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{color:C.muted,fontSize:13}}>Loading stats…</div>
+          )}
+        </div>
+      )}
+
+      {/* ════════ ASSIGNMENT MODAL ════════ */}
+      {assignLeadId&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}
+          onClick={()=>setAssignLeadId(null)}>
+          <div style={{background:C.panel,borderRadius:14,border:`1px solid ${C.border}`,padding:"1.5rem",width:360,maxWidth:"90vw"}}
+            onClick={e=>e.stopPropagation()}>
+            <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:"0 0 1rem"}}>Reassign Lead #{assignLeadId}</h3>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:"0.08em",marginBottom:"0.3rem"}}>SELECT OPERATOR</div>
+            {operators.length===0 ? (
+              <div style={{color:C.red,fontSize:12,padding:"1rem 0"}}>No active operators. Activate a prospect first.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:"0.35rem"}}>
+                {operators.map(op=>(
+                  <button key={op.place_id} onClick={()=>assignLead(assignLeadId, op.place_id)}
+                    style={{...btnBase,width:"100%",justifyContent:"space-between",padding:"0.5rem 0.75rem",fontSize:12,
+                      background:assignTo===op.place_id?"rgba(167,139,250,0.15)":"rgba(255,255,255,0.04)",
+                      color:"#fff",border:`1px solid ${assignTo===op.place_id?C.purple:"transparent"}`}}>
+                    <span>🚛 {op.name}</span>
+                    <span style={{fontSize:10,color:C.muted}}>{op.default_zone||"—"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={()=>setAssignLeadId(null)}
+              style={{...btnBase,width:"100%",justifyContent:"center",padding:"0.4rem",fontSize:11,color:C.muted,background:"rgba(255,255,255,0.04)",marginTop:"0.75rem"}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
