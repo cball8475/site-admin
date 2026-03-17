@@ -195,18 +195,23 @@
     "user_ratings_total": 77,
     "website": "https://www.robertsdumpsterrentals.com/",
     "notes": "",
-    "stage": "prospect",
+    "stage": "contacted",
     "addedAt": "2026-03-05T00:32:08.439Z",
-    "lastContact": null,
+    "lastContact": "2026-03-17T12:00:23.225Z",
     "score": 0,
     "activities": [
       {
         "type": "enrolled",
         "date": "2026-03-12T21:08:38.242Z",
         "note": "🚀 Enrolled in \"New Prospect — 5 Touch\" via API"
+      },
+      {
+        "type": "email",
+        "date": "2026-03-17T12:00:23.225Z",
+        "note": "✅ Auto: Intro Email — Sent to Robertsdumpsterrentals@gmail.com"
       }
     ],
-    "sequenceStep": 0,
+    "sequenceStep": 1,
     "sequence": "new_prospect",
     "sequenceStarted": "2026-03-12T21:08:38.242Z"
   }
