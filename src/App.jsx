@@ -186,9 +186,9 @@ const SEQUENCES = [
 
 // Fill template variables
 function fillTemplate(template, biz) {
-  const firstName = (biz.name || "").split(/[\s']/)[0] || "there";
+  const firstName = (biz.contact_name || "").split(/[\s']/)[0] || "";
   return template
-    .replace(/\{\{firstName\}\}/g, firstName)
+    .replace(/ ?\{\{firstName\}\}/g, firstName ? ` ${firstName}` : "")
     .replace(/\{\{company\}\}/g, biz.name || "your company")
     .replace(/\{\{city\}\}/g, (biz.vicinity || "Florence, SC").split(",")[0].trim())
     .replace(/\{\{phone\}\}/g, biz.formatted_phone_number || "");
@@ -855,7 +855,49 @@ function BuyerCRM({flash}) {
       });
       await loadCRMData();
       flash(biz.name+" added ✅");
+      // Auto-search for email in background
+      if (!biz.email && biz.website) {
+        findEmail({...biz, place_id: biz.place_id || biz.id});
+      }
     } catch(e) { flash(`Add failed: ${e.message}`,"error"); }
+  }
+
+  // ── EMAIL FINDER ──
+  const [emailSearching, setEmailSearching] = useState({});
+  async function findEmail(prospect) {
+    const pid = prospect.place_id || prospect.id;
+    setEmailSearching(prev => ({...prev, [pid]: true}));
+    try {
+      const socialLinks = [];
+      // Try to find Facebook/Yelp from the prospect data or common patterns
+      if (prospect.website) {
+        // Common social patterns
+        socialLinks.push(`https://www.facebook.com/search/top/?q=${encodeURIComponent(prospect.name)}`);
+      }
+      const res = await fetch("https://florence-outreach.cball8475.workers.dev/email-search", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          name: prospect.name,
+          website: prospect.website || null,
+          social_links: socialLinks,
+        }),
+      });
+      const data = await res.json();
+      if (data.emails && data.emails.length > 0) {
+        const bestEmail = data.emails[0].email;
+        const sources = data.emails[0].sources.join(", ");
+        await crm(`/prospects/${encodeURIComponent(pid)}`, "PATCH", { email: bestEmail });
+        await reloadProspect(pid);
+        flash(`Found email for ${prospect.short_name||prospect.name}: ${bestEmail} (from ${sources}) ✅`);
+      } else {
+        flash(`No email found for ${prospect.short_name||prospect.name} — try adding manually`, "info");
+      }
+    } catch(e) {
+      flash(`Email search failed: ${e.message}`, "error");
+    } finally {
+      setEmailSearching(prev => ({...prev, [pid]: false}));
+    }
   }
 
   async function deleteProspect(place_id) {
@@ -1321,11 +1363,19 @@ function BuyerCRM({flash}) {
                                      style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
                                 </div>
                               )}
-                              {p.email&&(
+                              {p.email?(
                                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                                   <span style={{fontSize:11,color:C.text}}>{p.email}</span>
                                   <a href={`mailto:${p.email}`}
                                      style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️</a>
+                                </div>
+                              ):(
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                  <span style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>No email</span>
+                                  <button onClick={()=>findEmail(p)} disabled={emailSearching[p.place_id||p.id]}
+                                    style={{...btnBase,background:"rgba(99,102,241,0.1)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,padding:"0.15rem 0.5rem",fontSize:9}}>
+                                    {emailSearching[p.place_id||p.id]?"⏳ Searching…":"🔍 Find Email"}
+                                  </button>
                                 </div>
                               )}
                               {p.vicinity&&<div style={{fontSize:9,color:C.muted}}>{p.vicinity}</div>}
@@ -1469,6 +1519,12 @@ function BuyerCRM({flash}) {
             {searched&&(
               <>
                 <button onClick={addAllQualified} style={{...btnBase,background:C.green,color:"#fff",fontSize:11}}>✅ Add All Qualified</button>
+                <button onClick={async()=>{
+                  const missing = pipeline.filter(p=>!p.email && p.website);
+                  if(!missing.length){flash("All prospects with websites already have emails","info");return;}
+                  flash(`Searching emails for ${missing.length} prospects…`);
+                  for(const p of missing){await findEmail(p);}
+                }} style={{...btnBase,background:"rgba(99,102,241,0.15)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,fontSize:11}}>🔍 Find Missing Emails</button>
                 <div style={{display:"flex",gap:3}}>
                   {["all","qualified","unqualified"].map(f=>(
                     <button key={f} onClick={()=>setFilter(f)}
