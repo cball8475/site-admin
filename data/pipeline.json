@@ -209,10 +209,16 @@
         "type": "email",
         "date": "2026-03-17T12:00:23.225Z",
         "note": "✅ Auto: Intro Email — Sent to Robertsdumpsterrentals@gmail.com"
+      },
+      {
+        "type": "unsubscribe",
+        "date": "2026-03-17T13:38:01.487Z",
+        "note": "🚫 Unsubscribed via email link"
       }
     ],
     "sequenceStep": 1,
-    "sequence": "new_prospect",
-    "sequenceStarted": "2026-03-12T21:08:38.242Z"
+    "sequence": null,
+    "sequenceStarted": "2026-03-12T21:08:38.242Z",
+    "unsubscribed": true
   }
 ]
