@@ -1331,158 +1331,171 @@ function BuyerCRM({gh, flash}) {
 
       {/* ══════════ PIPELINE VIEW ══════════ */}
       {crmView==="pipeline"&&(
-        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto"}}>
-            {STAGES.map(stage=>{
-              const cards=pipeline.filter(p=>p.stage===stage);
-              return(
-                <div key={stage} style={{minWidth:180,flex:1,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"0.35rem",padding:"0.3rem 0.35rem 0.55rem",borderBottom:`2px solid ${STAGE_COLORS[stage]}`}}>
-                    <span style={{fontSize:11,fontWeight:800,color:STAGE_COLORS[stage]}}>{STAGE_LABELS[stage]}</span>
-                    <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{cards.length}</span>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:"0.4rem",minHeight:50,flex:1,overflowY:"auto",paddingTop:"0.4rem"}}>
-                    {cards.map(p=>(
-                      <div key={p.place_id} onClick={()=>setSelected(p)}
-                        style={{background:selected?.place_id===p.place_id?"#1a3349":C.card,
-                          border:`1px solid ${selected?.place_id===p.place_id?C.blue:C.border}`,
+        <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto"}}>
+          {STAGES.map(stage=>{
+            const cards=pipeline.filter(p=>p.stage===stage);
+            return(
+              <div key={stage} style={{minWidth:220,flex:1,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"0.35rem",padding:"0.3rem 0.35rem 0.55rem",borderBottom:`2px solid ${STAGE_COLORS[stage]}`}}>
+                  <span style={{fontSize:11,fontWeight:800,color:STAGE_COLORS[stage]}}>{STAGE_LABELS[stage]}</span>
+                  <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{cards.length}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:"0.4rem",minHeight:50,flex:1,overflowY:"auto",paddingTop:"0.4rem"}}>
+                  {cards.map(p=>{
+                    const isOpen = selected?.place_id===p.place_id;
+                    const seq = SEQUENCES.find(s=>s.id===p.sequence);
+                    const step = seq?.steps[p.sequenceStep];
+                    return (
+                      <div key={p.place_id}
+                        style={{background:isOpen?"#1a3349":C.card,
+                          border:`1px solid ${isOpen?C.blue:C.border}`,
                           borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
-                          borderRadius:8,padding:"0.55rem 0.65rem",cursor:"pointer"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:2}}>{p.name}</div>
-                        <div style={{fontSize:9,color:C.amber}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
-                        {p.sequence && (
-                          <div style={{fontSize:8,color:C.purple,marginTop:2}}>
-                            🔄 {SEQUENCES.find(s=>s.id===p.sequence)?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
+                          borderRadius:8,overflow:"hidden"}}>
+                        {/* Card header — always visible */}
+                        <div onClick={()=>setSelected(isOpen?null:p)}
+                          style={{padding:"0.55rem 0.65rem",cursor:"pointer"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                            <div style={{fontSize:11,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:2}}>{p.name}</div>
+                            <span style={{fontSize:10,color:isOpen?C.blue:C.muted,flexShrink:0}}>{isOpen?"▾":"▸"}</span>
+                          </div>
+                          <div style={{fontSize:9,color:C.amber}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
+                          {p.sequence && (
+                            <div style={{fontSize:8,color:C.purple,marginTop:2}}>
+                              🔄 {seq?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
+                            </div>
+                          )}
+                          {p.notes&&!isOpen&&<div style={{fontSize:9,color:C.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
+                        </div>
+                        {/* Expanded detail — inline */}
+                        {isOpen&&(
+                          <div style={{padding:"0 0.65rem 0.65rem",display:"flex",flexDirection:"column",gap:"0.5rem",borderTop:`1px solid ${C.border}`}}>
+                            {/* Contact */}
+                            <div style={{paddingTop:"0.5rem"}}>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>CONTACT</div>
+                              {p.formatted_phone_number&&(
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                  <span style={{fontSize:11,color:C.text}}>{p.formatted_phone_number}</span>
+                                  <a href={`tel:+1${cleanPhone(p.formatted_phone_number)}`}
+                                     style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
+                                </div>
+                              )}
+                              {p.email&&(
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                  <span style={{fontSize:11,color:C.text}}>{p.email}</span>
+                                  <a href={`mailto:${p.email}`}
+                                     style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️</a>
+                                </div>
+                              )}
+                              {p.vicinity&&<div style={{fontSize:9,color:C.muted}}>{p.vicinity}</div>}
+                              {p.website&&<a href={p.website.startsWith("http")?p.website:`https://${p.website}`} target="_blank" rel="noreferrer" style={{fontSize:9,color:C.blue,textDecoration:"none"}}>{p.website}</a>}
+                            </div>
+                            {/* Score */}
+                            <div>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>SCORE</div>
+                              <div style={{background:"rgba(0,0,0,0.3)",borderRadius:3,height:4,marginBottom:3}}>
+                                <div style={{width:`${p.score||qualifyScore(p)}%`,height:"100%",background:`linear-gradient(90deg,${C.blue},${C.purple})`,borderRadius:3}}/>
+                              </div>
+                              <div style={{fontSize:10,color:"#fff"}}>{p.score||qualifyScore(p)}/100</div>
+                            </div>
+                            {/* Sequence */}
+                            <div>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>SEQUENCE</div>
+                              {p.sequence ? (
+                                <div>
+                                  <div style={{fontSize:10,color:C.purple,fontWeight:700,marginBottom:2}}>{seq?.name}</div>
+                                  <div style={{fontSize:10,color:C.text}}>Current: {step?.label} (Day {step?.day})</div>
+                                  <div style={{fontSize:9,color:C.muted,marginTop:1}}>Step {(p.sequenceStep||0)+1} of {seq?.steps.length}</div>
+                                  <div style={{display:"flex",gap:3,marginTop:5}}>
+                                    <button onClick={()=>completeStep(p.place_id)}
+                                      style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>✅ Done</button>
+                                    <button onClick={()=>skipStep(p.place_id)}
+                                      style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>⏭ Skip</button>
+                                    <button onClick={()=>unenrollSequence(p.place_id)}
+                                      style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>✕</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                                  <div style={{fontSize:10,color:C.muted,marginBottom:2}}>Not enrolled</div>
+                                  {SEQUENCES.map(sq => (
+                                    <button key={sq.id} onClick={()=>enrollInSequence(p.place_id, sq.id)}
+                                      style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,justifyContent:"flex-start",padding:"0.2rem 0.4rem"}}>
+                                      🚀 {sq.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {/* Stage */}
+                            <div>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>STAGE</div>
+                              <div style={{display:"flex",flexWrap:"wrap",gap:2}}>
+                                {STAGES.map(s=>(
+                                  <button key={s} onClick={()=>updateStage(p.place_id,s)}
+                                    style={{...btnBase,padding:"0.2rem 0.4rem",fontSize:9,
+                                      background:p.stage===s?`${STAGE_COLORS[s]}25`:"transparent",
+                                      color:p.stage===s?"#fff":C.muted,
+                                      border:`1px solid ${p.stage===s?STAGE_COLORS[s]:"transparent"}`}}>
+                                    {STAGE_LABELS[s]}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {/* AI Outreach */}
+                            <div>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>AI OUTREACH</div>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
+                                {["email","coldcall","sms","letter"].map(t=>(
+                                  <button key={t} onClick={()=>generate(p,t)}
+                                    style={{...btnBase,background:"rgba(56,189,248,0.08)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:9,justifyContent:"center",padding:"0.25rem"}}>
+                                    {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {/* Notes */}
+                            <div>
+                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>NOTES</div>
+                              <textarea value={p.notes||""}
+                                onChange={e=>{
+                                  const val=e.target.value;
+                                  setSelected(s=>({...s,notes:val}));
+                                  setPipeline(prev=>prev.map(x=>x.place_id===p.place_id?{...x,notes:val}:x));
+                                  updateNotes(p.place_id,val);
+                                }}
+                                placeholder="Add notes…"
+                                style={{width:"100%",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:10,padding:"0.3rem",fontFamily:"inherit",minHeight:40,resize:"vertical",boxSizing:"border-box"}}/>
+                            </div>
+                            {/* Activity log */}
+                            {(p.activities||[]).length > 0 && (
+                              <div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>ACTIVITY</div>
+                                <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:100,overflowY:"auto"}}>
+                                  {[...(p.activities||[])].reverse().slice(0,5).map((a, i) => (
+                                    <div key={i} style={{display:"flex",gap:"0.3rem",alignItems:"flex-start"}}>
+                                      <span style={{fontSize:9,flexShrink:0}}>{TYPE_ICONS[a.type] || "📌"}</span>
+                                      <span style={{fontSize:8,color:C.text,flex:1,lineHeight:1.3}}>{a.note}</span>
+                                      <span style={{fontSize:7,color:C.muted,whiteSpace:"nowrap",flexShrink:0}}>{ago(a.date)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Remove */}
+                            <button onClick={()=>removeFromPipeline(p.place_id)}
+                              style={{...btnBase,background:"rgba(239,68,68,0.1)",color:C.red,border:`1px solid rgba(239,68,68,0.2)`,justifyContent:"center",fontSize:9,padding:"0.25rem"}}>
+                              Remove from Pipeline
+                            </button>
                           </div>
                         )}
-                        {p.notes&&<div style={{fontSize:9,color:C.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
                       </div>
-                    ))}
-                    {cards.length===0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.1)",textAlign:"center",padding:"0.85rem 0"}}>empty</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {selected&&(
-            <div style={{width:285,background:C.panel,borderLeft:`1px solid ${C.border}`,overflowY:"auto",padding:"0.85rem",display:"flex",flexDirection:"column",gap:"0.7rem",flexShrink:0}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#fff",lineHeight:1.3}}>{selected.name}</div>
-                  <div style={{fontSize:10,color:C.muted,marginTop:2}}>{selected.vicinity}</div>
-                </div>
-                <button onClick={()=>setSelected(null)} style={{...btnBase,background:"transparent",color:C.muted,padding:"0.15rem 0.35rem"}}>✕</button>
-              </div>
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>SCORE</div>
-                <div style={{background:"rgba(0,0,0,0.3)",borderRadius:3,height:4,marginBottom:3}}>
-                  <div style={{width:`${selected.score||qualifyScore(selected)}%`,height:"100%",background:`linear-gradient(90deg,${C.blue},${C.purple})`,borderRadius:3}}/>
-                </div>
-                <div style={{fontSize:10,color:"#fff"}}>{selected.score||qualifyScore(selected)}/100</div>
-              </div>
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:5}}>CONTACT</div>
-                {selected.formatted_phone_number&&(
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                    <span style={{fontSize:11,color:C.text}}>{selected.formatted_phone_number}</span>
-                    <a href={`tel:+1${cleanPhone(selected.formatted_phone_number)}`}
-                       style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
-                  </div>
-                )}
-                <div style={{fontSize:10,color:C.amber}}>★ {selected.rating} ({selected.user_ratings_total})</div>
-              </div>
-              {/* SEQUENCE STATUS */}
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${selected.sequence?"rgba(167,139,250,0.3)":C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:5}}>SEQUENCE</div>
-                {selected.sequence ? (
-                  <>
-                    {(() => {
-                      const seq = SEQUENCES.find(s=>s.id===selected.sequence);
-                      const step = seq?.steps[selected.sequenceStep];
-                      return seq ? (
-                        <div>
-                          <div style={{fontSize:10,color:C.purple,fontWeight:700,marginBottom:3}}>{seq.name}</div>
-                          <div style={{fontSize:10,color:C.text}}>Current: {step?.label} (Day {step?.day})</div>
-                          <div style={{fontSize:9,color:C.muted,marginTop:2}}>Step {(selected.sequenceStep||0)+1} of {seq.steps.length}</div>
-                          <div style={{display:"flex",gap:3,marginTop:6}}>
-                            <button onClick={()=>completeStep(selected.place_id)}
-                              style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>✅ Done</button>
-                            <button onClick={()=>skipStep(selected.place_id)}
-                              style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>⏭ Skip</button>
-                            <button onClick={()=>unenrollSequence(selected.place_id)}
-                              style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>✕ Remove</button>
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-                  </>
-                ) : (
-                  <div>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:4}}>Not enrolled</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                      {SEQUENCES.map(seq => (
-                        <button key={seq.id} onClick={()=>enrollInSequence(selected.place_id, seq.id)}
-                          style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,justifyContent:"flex-start",padding:"0.25rem 0.45rem"}}>
-                          🚀 {seq.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:5}}>STAGE</div>
-                <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                  {STAGES.map(s=>(
-                    <button key={s} onClick={()=>updateStage(selected.place_id,s)}
-                      style={{...btnBase,padding:"0.2rem 0.45rem",fontSize:10,justifyContent:"flex-start",
-                        background:selected.stage===s?`${STAGE_COLORS[s]}25`:"transparent",
-                        color:selected.stage===s?"#fff":C.muted,
-                        border:`1px solid ${selected.stage===s?STAGE_COLORS[s]:"transparent"}`}}>
-                      {STAGE_LABELS[s]}
-                    </button>
-                  ))}
+                    );
+                  })}
+                  {cards.length===0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.1)",textAlign:"center",padding:"0.85rem 0"}}>empty</div>}
                 </div>
               </div>
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:5}}>AI OUTREACH</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-                  {["email","coldcall","sms","letter"].map(t=>(
-                    <button key={t} onClick={()=>generate(selected,t)}
-                      style={{...btnBase,background:"rgba(56,189,248,0.08)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:9,justifyContent:"center",padding:"0.3rem"}}>
-                      {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>NOTES</div>
-                <textarea value={selected.notes||""}
-                  onChange={e=>{setSelected(s=>({...s,notes:e.target.value}));updateNotes(selected.place_id,e.target.value);}}
-                  placeholder="Add notes…"
-                  style={{width:"100%",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:11,padding:"0.35rem",fontFamily:"inherit",minHeight:50,resize:"vertical",boxSizing:"border-box"}}/>
-              </div>
-              {/* ACTIVITY LOG */}
-              {(selected.activities||[]).length > 0 && (
-                <div style={{background:C.card,borderRadius:8,padding:"0.6rem",border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:5}}>ACTIVITY LOG</div>
-                  <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:150,overflowY:"auto"}}>
-                    {[...(selected.activities||[])].reverse().map((a, i) => (
-                      <div key={i} style={{display:"flex",gap:"0.35rem",alignItems:"flex-start"}}>
-                        <span style={{fontSize:10,flexShrink:0}}>{TYPE_ICONS[a.type] || "📌"}</span>
-                        <span style={{fontSize:9,color:C.text,flex:1,lineHeight:1.4}}>{a.note}</span>
-                        <span style={{fontSize:8,color:C.muted,whiteSpace:"nowrap",flexShrink:0}}>{ago(a.date)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <button onClick={()=>removeFromPipeline(selected.place_id)}
-                style={{...btnBase,background:"rgba(239,68,68,0.1)",color:C.red,border:`1px solid rgba(239,68,68,0.2)`,justifyContent:"center",fontSize:10}}>
-                Remove from Pipeline
-              </button>
-            </div>
-          )}
+            );
+          })}
         </div>
       )}
 
