@@ -48,6 +48,11 @@
           "subject": "Quick follow-up — dumpster rental leads",
           "body": "Hi Lou,\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com"
         }
+      },
+      {
+        "type": "call",
+        "date": "2026-03-20T14:30:42.196Z",
+        "note": "📞 CALL DUE: Discovery Call — (843) 319-8508"
       }
     ],
     "sequenceStep": 2,
@@ -103,6 +108,11 @@
           "subject": "Quick follow-up — dumpster rental leads",
           "body": "Hi Dennis,\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com"
         }
+      },
+      {
+        "type": "call",
+        "date": "2026-03-20T14:30:42.196Z",
+        "note": "📞 CALL DUE: Discovery Call — (843) 393-4884"
       }
     ],
     "sequenceStep": 2,
@@ -140,6 +150,11 @@
         "type": "email",
         "date": "2026-03-16T12:00:50.673Z",
         "note": "✅ Auto: Follow-up Email — Sent to info@spcontainer.net"
+      },
+      {
+        "type": "call",
+        "date": "2026-03-20T14:30:42.196Z",
+        "note": "📞 CALL DUE: Discovery Call — (843) 673-0404"
       }
     ],
     "sequenceStep": 2,
@@ -180,6 +195,11 @@
         "type": "email",
         "date": "2026-03-16T12:00:50.861Z",
         "note": "✅ Auto: Follow-up Email — Sent to Scott@arborworkstreesc.com"
+      },
+      {
+        "type": "call",
+        "date": "2026-03-20T14:30:42.196Z",
+        "note": "📞 CALL DUE: Discovery Call — (843) 861-7930"
       }
     ]
   },
