@@ -1330,13 +1330,13 @@ function BuyerCRM({flash}) {
                     const seq = SEQUENCES.find(s=>s.id===p.sequence);
                     const step = seq?.steps[p.sequenceStep];
                     return (
-                      <div key={p.place_id}
+                      <div key={p.place_id} ref={el=>{if(isOpen&&el)el.scrollIntoView({behavior:"smooth",block:"nearest"})}}
                         style={{background:isOpen?"#1a3349":C.card,
                           border:`1px solid ${isOpen?C.blue:C.border}`,
                           borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
-                          borderRadius:8,overflow:"hidden"}}>
+                          borderRadius:8}}>
                         {/* Card header — always visible */}
-                        <div onClick={()=>{console.log("CLICK",p.place_id,p.short_name);setSelected(isOpen?null:p);}}
+                        <div onClick={()=>setSelected(isOpen?null:p)}
                           style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                             <div style={{flex:1,minWidth:0}}>
