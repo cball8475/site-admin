@@ -1334,9 +1334,9 @@ function BuyerCRM({flash}) {
                         style={{background:isOpen?"#1a3349":C.card,
                           border:`1px solid ${isOpen?C.blue:C.border}`,
                           borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
-                          borderRadius:8,minHeight:44}}>
+                          borderRadius:8,overflow:"hidden"}}>
                         {/* Card header — always visible */}
-                        <div onClick={()=>setSelected(isOpen?null:p)}
+                        <div onClick={()=>{console.log("CLICK",p.place_id,p.short_name);setSelected(isOpen?null:p);}}
                           style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                             <div style={{flex:1,minWidth:0}}>
