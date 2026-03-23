@@ -1083,7 +1083,7 @@ function BuyerCRM({flash}) {
   const TYPE_ICONS = { email: "✉️", call: "📞", coldcall: "📞", sms: "💬", letter: "📄", enrolled: "🚀", skip: "⏭", unenroll: "🛑", action: "⚡" };
 
   return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {/* CRM Sub-tabs */}
       <div style={{display:"flex",gap:4,padding:"0.45rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center"}}>
         {[["today",`⚡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","🗂 Pipeline"],["prospects","🔍 Prospects"],["sequences","🔄 Sequences"]].map(([k,l])=>(
@@ -1315,11 +1315,11 @@ function BuyerCRM({flash}) {
 
       {/* ══════════ PIPELINE VIEW ══════════ */}
       {crmView==="pipeline"&&(
-        <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto",overflowY:"auto"}}>
+        <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto",overflowY:"auto",minHeight:0}}>
           {STAGES.map(stage=>{
             const cards=pipeline.filter(p=>p.stage===stage);
             return(
-              <div key={stage} style={{minWidth:250,flex:1,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
+              <div key={stage} style={{width:260,minWidth:260,flexShrink:0,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"0.35rem",padding:"0.3rem 0.35rem 0.55rem",borderBottom:`2px solid ${STAGE_COLORS[stage]}`}}>
                   <span style={{fontSize:11,fontWeight:800,color:STAGE_COLORS[stage]}}>{STAGE_LABELS[stage]}</span>
                   <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{cards.length}</span>
