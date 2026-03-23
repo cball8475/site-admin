@@ -1334,7 +1334,7 @@ function BuyerCRM({flash}) {
                         style={{background:isOpen?"#1a3349":C.card,
                           border:`1px solid ${isOpen?C.blue:C.border}`,
                           borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
-                          borderRadius:8,overflow:isOpen?"visible":"hidden"}}>
+                          borderRadius:8,minHeight:44}}>
                         {/* Card header — always visible */}
                         <div onClick={()=>setSelected(isOpen?null:p)}
                           style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
