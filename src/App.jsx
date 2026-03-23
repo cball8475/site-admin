@@ -1337,21 +1337,21 @@ function BuyerCRM({flash}) {
                           borderRadius:8,overflow:isOpen?"visible":"hidden"}}>
                         {/* Card header — always visible */}
                         <div onClick={()=>setSelected(isOpen?null:p)}
-                          style={{padding:"0.55rem 0.65rem",cursor:"pointer"}}>
+                          style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:11,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:2}}>{p.name}</div>
-                              {p.default_zone&&<span style={{fontSize:8,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"1px 5px",borderRadius:100}}>Zone {p.default_zone}</span>}
+                              <div style={{fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.35,marginBottom:3}}>{p.short_name||p.name}</div>
+                              {p.default_zone&&<span style={{fontSize:9,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 6px",borderRadius:100}}>Zone {p.default_zone}</span>}
                             </div>
-                            <span style={{fontSize:10,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:4}}>{isOpen?"▾":"▸"}</span>
+                            <span style={{fontSize:12,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:6}}>{isOpen?"▾":"▸"}</span>
                           </div>
-                          <div style={{fontSize:9,color:C.amber}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
+                          <div style={{fontSize:10,color:C.amber,marginTop:2}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
                           {p.sequence && (
-                            <div style={{fontSize:8,color:C.purple,marginTop:2}}>
+                            <div style={{fontSize:9,color:C.purple,marginTop:3}}>
                               🔄 {seq?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
                             </div>
                           )}
-                          {p.notes&&!isOpen&&<div style={{fontSize:9,color:C.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
+                          {p.notes&&!isOpen&&<div style={{fontSize:10,color:C.muted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
                         </div>
                         {/* Expanded detail — inline */}
                         {isOpen&&(
