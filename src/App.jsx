@@ -125,24 +125,24 @@ const SEQUENCES = [
   {
     id: "new_prospect",
     name: "New Prospect — 5 Touch",
-    description: "Full introduction sequence: email → follow-up → call → value email → breakup",
+    description: "Full introduction sequence: email → follow-up → value email → case study → final",
     steps: [
       { day: 0, type: "email", label: "Intro Email",
         subject: "Partner with Florence SC Services — We Send You Customers",
         template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
       },
-      { day: 3, type: "email", label: "Follow-up Email",
+      { day: 2, type: "email", label: "Follow-up Email",
         subject: "Quick follow-up — dumpster rental leads",
         template: `Hi {{firstName}},\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
       },
-      { day: 7, type: "call", label: "Discovery Call",
+      { day: 5, type: "email", label: "Value Prop Email",
         template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending dumpster rental leads your way. Wanted to connect real quick — do you have a minute?\n\n[IF YES] Great — so we generate leads for dumpster rentals in the Pee Dee region. Rather than keeping them, we partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask — are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
       },
-      { day: 10, type: "email", label: "Value Email",
+      { day: 8, type: "email", label: "Case Study Email",
         subject: "How {{company}} can get more dumpster jobs without ads",
         template: `Hi {{firstName}},\n\nMost dumpster rental companies in Florence rely on word of mouth or expensive Google Ads ($15-30 per click).\n\nWe do it differently — we rank organically for "dumpster rental Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
       },
-      { day: 17, type: "email", label: "Breakup Email",
+      { day: 12, type: "email", label: "Final Email",
         subject: "Last note from me — {{company}}",
         template: `Hi {{firstName}},\n\nI've reached out a few times about sending dumpster rental leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply to this and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
       },
@@ -1579,6 +1579,8 @@ function BuyerCRM({flash}) {
           {searched&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"0.6rem"}}>
               {prospects.filter(p=>{
+                // Only show discovery-stage prospects — enrolled/pipeline prospects belong in Pipeline view
+                if(p.stage !== "discovery") return false;
                 const s=qualifyScore(p);
                 if(filter==="qualified") return s>=55;
                 if(filter==="unqualified") return s<55;
