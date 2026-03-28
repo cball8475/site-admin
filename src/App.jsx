@@ -31,6 +31,7 @@ async function crmFetch(url, token, path, method = "GET", body = null) {
 }
 
 // Normalize D1 field names → legacy UI field names
+// vertical defaults to "dumpster" for all existing prospects
 function normalizeProspect(p) {
   if (!p) return p;
   return {
@@ -44,6 +45,7 @@ function normalizeProspect(p) {
     addedAt: p.added_at || p.addedAt || null,
     lastContact: p.last_contact || p.lastContact || null,
     activities: p.activities || [],
+    vertical: p.vertical || "dumpster",   // NEW: default existing prospects to dumpster
   };
 }
 
@@ -88,6 +90,17 @@ const btnBase = { display:"inline-flex", alignItems:"center", gap:"0.4rem", bord
   whiteSpace:"nowrap" };
 
 // ══════════════════════════════════════════════════════════════
+// VERTICALS — multi-vertical support
+// ══════════════════════════════════════════════════════════════
+const VERTICALS = [
+  { id: "dumpster", label: "Dumpster Rental", color: C.blue,  icon: "🗑" },
+  { id: "tree",     label: "Tree Cutting & Cleanout", color: C.green, icon: "🌳" },
+];
+
+// Helper: vertical config by id
+const getVertical = (id) => VERTICALS.find(v => v.id === id) || VERTICALS[0];
+
+// ══════════════════════════════════════════════════════════════
 // LEAD SCORING
 // ══════════════════════════════════════════════════════════════
 const scoreColor = s => s>=75?C.green:s>=45?C.amber:C.red;
@@ -120,10 +133,13 @@ const SEED_PROSPECTS=[
 
 // ══════════════════════════════════════════════════════════════
 // OUTREACH SEQUENCES — the automation engine
+// vertical field determines which switcher tab shows this sequence
 // ══════════════════════════════════════════════════════════════
 const SEQUENCES = [
+  // ── DUMPSTER RENTAL ─────────────────────────────────────────
   {
     id: "new_prospect",
+    vertical: "dumpster",
     name: "New Prospect — 5 Touch",
     description: "Full introduction sequence: email → follow-up → value email → case study → final",
     steps: [
@@ -150,6 +166,7 @@ const SEQUENCES = [
   },
   {
     id: "re_engage",
+    vertical: "dumpster",
     name: "Re-engage — Dead Leads",
     description: "Wake up prospects who went cold. 3 touches over 2 weeks.",
     steps: [
@@ -167,6 +184,7 @@ const SEQUENCES = [
   },
   {
     id: "pilot_followup",
+    vertical: "dumpster",
     name: "Pilot Follow-up",
     description: "After sending free leads — convert to paid.",
     steps: [
@@ -181,7 +199,72 @@ const SEQUENCES = [
         template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
       },
     ]
-  }
+  },
+
+  // ── TREE CUTTING & CLEANOUT ──────────────────────────────────
+  {
+    id: "tree_new_prospect",
+    vertical: "tree",
+    name: "New Prospect — Tree (5 Touch)",
+    description: "Full intro sequence for tree cutting & cleanout operators",
+    steps: [
+      { day: 0, type: "email", label: "Intro Email",
+        subject: "Partner with Florence SC Services — Tree Removal Leads",
+        template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and property managers in the Pee Dee region with local tree cutting and land cleanout providers.\n\nWe're getting steady inquiries from people who need tree removal, stump grinding, and cleanout work, and I'm looking for a reliable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
+      },
+      { day: 2, type: "email", label: "Follow-up Email",
+        subject: "Quick follow-up — tree removal leads in your area",
+        template: `Hi {{firstName}},\n\nJust circling back on my note from a couple days ago. We have customers actively searching for tree removal and cleanout services in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
+      },
+      { day: 5, type: "call", label: "Cold Call",
+        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending tree removal leads your way. Wanted to connect real quick — do you have a minute?\n\n[IF YES] Great — so we generate leads for tree removal and cleanout services in the Pee Dee region. We partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask — are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+      },
+      { day: 8, type: "email", label: "Value Prop Email",
+        subject: "How {{company}} can get more tree jobs without ads",
+        template: `Hi {{firstName}},\n\nMost tree service companies in Florence rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently — we rank organically for "tree removal Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+      },
+      { day: 12, type: "email", label: "Final Email",
+        subject: "Last note from me — {{company}}",
+        template: `Hi {{firstName}},\n\nI've reached out a few times about sending tree removal leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
+      },
+    ]
+  },
+  {
+    id: "tree_re_engage",
+    vertical: "tree",
+    name: "Re-engage — Tree (Dead Leads)",
+    description: "Wake up tree service prospects who went cold. 3 touches over 2 weeks.",
+    steps: [
+      { day: 0, type: "email", label: "Check-in Email",
+        subject: "Still sending tree removal leads in Florence — room for one more partner",
+        template: `Hi {{firstName}},\n\nWe connected a while back about sending tree removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+      },
+      { day: 5, type: "call", label: "Quick Call",
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about tree removal leads — just wanted to see if timing is better now. We've got more volume and room for one more partner. Quick 2-minute call worth it?`
+      },
+      { day: 12, type: "sms", label: "Final Text",
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have tree removal leads if you want to test it out — 2 free, no strings. Just reply YES and I'll send them your way.`
+      },
+    ]
+  },
+  {
+    id: "tree_pilot_followup",
+    vertical: "tree",
+    name: "Pilot Follow-up — Tree",
+    description: "After sending free tree removal leads — convert to paid.",
+    steps: [
+      { day: 0, type: "call", label: "Pilot Check-in Call",
+        template: `Hey {{firstName}}, Charlie here. Just checking in on those tree removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works — we send you exclusive tree removal and cleanout leads per month for your area. Pricing starts at $297/month. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries — sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+      },
+      { day: 3, type: "email", label: "Pilot Results + Offer",
+        subject: "Your pilot results + next steps",
+        template: `Hi {{firstName}},\n\nHope the pilot tree removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\n• Exclusive leads for your area — no sharing with competitors\n• $297/mo Starter or $397/mo Growth plan\n• You're the only tree service partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+      },
+      { day: 7, type: "call", label: "Close Call",
+        template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another tree service operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
+      },
+    ]
+  },
 ];
 
 // Fill template variables
@@ -196,13 +279,17 @@ function fillTemplate(template, biz) {
 
 // ══════════════════════════════════════════════════════════════
 // OUTREACH — via Cloudflare Worker proxy
+// vertical-aware prompts
 // ══════════════════════════════════════════════════════════════
 async function generateOutreach(biz, type) {
+  const isTree = (biz.vertical || "dumpster") === "tree";
+  const service = isTree ? "tree removal and land cleanout" : "dumpster rental";
+  const niche   = isTree ? "tree service" : "dumpster rental";
   const prompts={
-    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do dumpster rental. We offer 2 FREE exclusive leads as a pilot, no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
-    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (dumpster rental, Florence SC). We offer 2 free exclusive leads, pilot program, one partner per area. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
-    sms:`Write a brief friendly SMS to "${biz.name}" dumpster rental in Florence SC about our free pilot leads. Max 2 sentences. Sound human.`,
-    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local lead gen pilot for dumpster rentals. Mention their strong local reputation. Professional but warm.`,
+    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. We offer 2 FREE exclusive leads as a pilot, no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
+    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). We offer 2 free exclusive leads, pilot program, one partner per area. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
+    sms:`Write a brief friendly SMS to "${biz.name}" ${niche} in Florence SC about our free pilot leads for ${service}. Max 2 sentences. Sound human.`,
+    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local lead gen pilot for ${service}. Mention their strong local reputation. Professional but warm.`,
   };
   const res = await fetch("https://florence-outreach.cball8475.workers.dev", {
     method:"POST", headers:{"Content-Type":"application/json"},
@@ -312,7 +399,7 @@ function LeadsDashboard({flash}) {
 
   async function assignLead(leadId, prospectId) {
     try {
-      const res = await crm(`/leads/${leadId}/assign`, "POST", { prospect_id: prospectId });
+      await crm(`/leads/${leadId}/assign`, "POST", { prospect_id: prospectId });
       await loadAll();
       setAssignLeadId(null);
       flash("Lead reassigned ✅");
@@ -726,7 +813,7 @@ function LeadsDashboard({flash}) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// BUYER CRM — with OUTREACH AUTOMATION ENGINE
+// BUYER CRM — with OUTREACH AUTOMATION ENGINE + MULTI-VERTICAL
 // ══════════════════════════════════════════════════════════════
 function BuyerCRM({flash}) {
   // ── D1 CRM API config ──
@@ -751,8 +838,18 @@ function BuyerCRM({flash}) {
   const [syncing,      setSyncing]     = useState(false);
   const [filter,       setFilter]      = useState("qualified");
   const [showAddForm,  setShowAddForm] = useState(false);
-  const [newBiz,       setNewBiz]      = useState({name:"",formatted_phone_number:"",vicinity:"",website:"",rating:"",user_ratings_total:"",notes:""});
+  const [newBiz,       setNewBiz]      = useState({name:"",formatted_phone_number:"",vicinity:"",website:"",rating:"",user_ratings_total:"",notes:"",vertical:"dumpster"});
   const [googleKey,    setGoogleKey]   = useState(ENV_GPLACES || lsGet("gplaces_key") || "");
+
+  // ── VERTICAL STATE — persisted to localStorage ──
+  const [activeVertical, setActiveVertical] = useState(lsGet("fsc_vertical") || "all");
+  useEffect(() => { lsSet("fsc_vertical", activeVertical); }, [activeVertical]);
+
+  // ── VERTICAL-FILTERED PIPELINE ──
+  // "all" shows everything; otherwise filters by prospect.vertical
+  const filteredPipeline = activeVertical === "all"
+    ? pipeline
+    : pipeline.filter(p => (p.vertical || "dumpster") === activeVertical);
 
   // Load from D1 CRM API on mount
   useEffect(() => {
@@ -765,7 +862,7 @@ function BuyerCRM({flash}) {
     try {
       const { prospects: all } = await crm("/prospects");
       const normalized = all.map(normalizeProspect);
-      // For each prospect, fetch activities to populate the activities array
+      // Fetch activities for each prospect
       const withActivities = await Promise.all(normalized.map(async (p) => {
         try {
           const { activities } = await crm(`/prospects/${encodeURIComponent(p.place_id)}/activities`);
@@ -804,11 +901,13 @@ function BuyerCRM({flash}) {
     setLoading(true);
     if (googleKey.trim()) {
       try {
-        const results = await searchGooglePlaces("dumpster rental","Florence SC", googleKey.trim());
+        // Use vertical-appropriate keyword for Google Places search
+        const keyword = activeVertical === "tree" ? "tree removal service" : "dumpster rental";
+        const results = await searchGooglePlaces(keyword,"Florence SC", googleKey.trim());
         if (results.length === 0) throw new Error("No results returned");
         const existingIds = new Set(prospects.map(p=>p.place_id));
         const newResults = results.filter(r=>!existingIds.has(r.place_id));
-        // Add each new result to D1
+        // Add each new result to D1 with current vertical
         for (const r of newResults) {
           try {
             await crm("/prospects", "POST", {
@@ -822,6 +921,7 @@ function BuyerCRM({flash}) {
               reviews: r.user_ratings_total || 0,
               notes: r.notes || "",
               stage: "discovery",
+              vertical: activeVertical === "all" ? "dumpster" : activeVertical,
             });
           } catch(e) { console.warn("Add prospect error:", r.name, e.message); }
         }
@@ -852,6 +952,7 @@ function BuyerCRM({flash}) {
         reviews: parseInt(biz.user_ratings_total) || 0,
         notes: biz.notes || "",
         stage: "discovery",
+        vertical: biz.vertical || "dumpster",   // NEW: include vertical in POST
       });
       await loadCRMData();
       flash(biz.name+" added ✅");
@@ -869,9 +970,7 @@ function BuyerCRM({flash}) {
     setEmailSearching(prev => ({...prev, [pid]: true}));
     try {
       const socialLinks = [];
-      // Try to find Facebook/Yelp from the prospect data or common patterns
       if (prospect.website) {
-        // Common social patterns
         socialLinks.push(`https://www.facebook.com/search/top/?q=${encodeURIComponent(prospect.name)}`);
       }
       const res = await fetch("https://florence-outreach.cball8475.workers.dev/email-search", {
@@ -916,6 +1015,7 @@ function BuyerCRM({flash}) {
       await crm(`/prospects/${encodeURIComponent(biz.place_id)}`, "PATCH", {
         stage: "prospect",
         score: qualifyScore(biz),
+        vertical: biz.vertical || "dumpster",   // NEW: carry vertical through to pipeline
       });
       await reloadProspect(biz.place_id);
       flash(`${biz.name} added ✅`);
@@ -981,7 +1081,6 @@ function BuyerCRM({flash}) {
       await crm(`/prospects/${encodeURIComponent(prospectId)}/advance`, "POST", {
         note: `✅ Completed: ${currentStep?.label || "Step " + (p.sequenceStep + 1)}`,
       });
-      // If this was the last step, unenroll
       if (seq && p.sequenceStep + 1 >= seq.steps.length) {
         await crm(`/prospects/${encodeURIComponent(prospectId)}/unenroll`, "POST");
       }
@@ -1027,11 +1126,10 @@ function BuyerCRM({flash}) {
     } catch(e) { flash(`Unenroll failed: ${e.message}`,"error"); }
   }
 
-  // ── COMPUTE TODAY'S ACTIONS ──────────────────────────────
+  // ── COMPUTE TODAY'S ACTIONS (uses filteredPipeline) ─────────
   function getTodaysActions() {
     const actions = [];
-    const now = new Date();
-    pipeline.forEach(p => {
+    filteredPipeline.forEach(p => {
       if (!p.sequence || p.stage === "dead" || p.stage === "closed") return;
       const seq = SEQUENCES.find(s => s.id === p.sequence);
       if (!seq) return;
@@ -1042,23 +1140,19 @@ function BuyerCRM({flash}) {
       const dueStr = dueDate.toISOString();
       if (isPast(dueStr) || isToday(dueStr)) {
         actions.push({
-          prospect: p,
-          step,
-          stepIndex: p.sequenceStep,
-          sequence: seq,
+          prospect: p, step, stepIndex: p.sequenceStep, sequence: seq,
           dueDate: dueStr,
           overdue: isPast(dueStr) && !isToday(dueStr),
         });
       }
     });
-    // Sort: overdue first, then by due date
     actions.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || new Date(a.dueDate) - new Date(b.dueDate));
     return actions;
   }
 
-  // Prospects not yet enrolled in any sequence
+  // Prospects not yet enrolled — filtered by vertical
   function getUnenrolled() {
-    return pipeline.filter(p => !p.sequence && p.stage !== "dead" && p.stage !== "closed");
+    return filteredPipeline.filter(p => !p.sequence && p.stage !== "dead" && p.stage !== "closed");
   }
 
   async function generate(biz, type) {
@@ -1068,13 +1162,14 @@ function BuyerCRM({flash}) {
     setGenerating(false);
   }
 
+  // Stats derived from filteredPipeline
   const stats={
-    total:pipeline.length,
-    closed:pipeline.filter(p=>p.stage==="closed").length,
-    active:pipeline.filter(p=>p.stage==="pilot_active").length,
-    revenue:pipeline.filter(p=>p.stage==="closed").length*497,
+    total:filteredPipeline.length,
+    closed:filteredPipeline.filter(p=>p.stage==="closed").length,
+    active:filteredPipeline.filter(p=>p.stage==="pilot_active").length,
+    revenue:filteredPipeline.filter(p=>p.stage==="closed").length*497,
     todayActions: getTodaysActions().length,
-    inSequence: pipeline.filter(p=>p.sequence).length,
+    inSequence: filteredPipeline.filter(p=>p.sequence).length,
   };
 
   const todayActions = getTodaysActions();
@@ -1082,10 +1177,30 @@ function BuyerCRM({flash}) {
 
   const TYPE_ICONS = { email: "✉️", call: "📞", coldcall: "📞", sms: "💬", letter: "📄", enrolled: "🚀", skip: "⏭", unenroll: "🛑", action: "⚡" };
 
+  // ── OPERATOR BLOCK helpers ─────────────────────────────────
+  // Operators are pipeline prospects in pilot_active or closed stage
+  const operatorProspects = filteredPipeline.filter(p => p.stage === "pilot_active" || p.stage === "closed");
+
+  // ── ZONE GRID helpers ──────────────────────────────────────
+  // For each zone 1-10, determine status for the active vertical
+  function getZoneStatus(zoneNum) {
+    const inZone = filteredPipeline.filter(p => String(p.default_zone) === String(zoneNum));
+    if (inZone.some(p => p.stage === "closed")) return "active";
+    if (inZone.some(p => p.stage === "pilot_active")) return "pilot";
+    return "open";
+  }
+
+  // Sequences filtered by vertical (for enrollment UI)
+  const verticalSequences = activeVertical === "all"
+    ? SEQUENCES
+    : SEQUENCES.filter(s => s.vertical === activeVertical);
+
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
-      {/* CRM Sub-tabs */}
-      <div style={{display:"flex",gap:4,padding:"0.45rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center"}}>
+
+      {/* ══ CRM Sub-tabs + Vertical Switcher ══ */}
+      <div style={{display:"flex",gap:4,padding:"0.45rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
+        {/* View sub-tabs */}
         {[["today",`⚡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","🗂 Pipeline"],["prospects","🔍 Prospects"],["sequences","🔄 Sequences"]].map(([k,l])=>(
           <button key={k} onClick={()=>setCrmView(k)}
             style={{...btnBase,padding:"0.25rem 0.7rem",fontSize:11,
@@ -1096,7 +1211,22 @@ function BuyerCRM({flash}) {
             {l}
           </button>
         ))}
+
+        {/* Vertical switcher — separating line then [All] [🗑 Dumpster] [🌳 Tree] */}
+        <div style={{width:1,height:18,background:C.border,margin:"0 4px",flexShrink:0}}/>
+        {[{id:"all",label:"All",icon:"🔘",color:C.muted}, ...VERTICALS.map(v=>({...v,label:v.label.split(" ")[0]}))].map(v=>(
+          <button key={v.id} onClick={()=>setActiveVertical(v.id)}
+            style={{...btnBase,padding:"0.22rem 0.6rem",fontSize:10,
+              background:activeVertical===v.id?`${v.color||C.muted}18`:"transparent",
+              color:activeVertical===v.id?(v.color||"#fff"):C.muted,
+              border:`1px solid ${activeVertical===v.id?(v.color||C.muted)+"55":"transparent"}`}}>
+            {v.icon} {v.label}
+          </button>
+        ))}
+
         {syncing && <span style={{fontSize:10,color:C.muted,marginLeft:4}}>⟳ syncing…</span>}
+
+        {/* Pipeline stats */}
         <div style={{marginLeft:"auto",display:"flex",gap:"1.25rem"}}>
           {[{l:"Pipeline",v:stats.total},{l:"Sequenced",v:stats.inSequence,c:C.purple},{l:"Today",v:stats.todayActions,c:stats.todayActions>0?C.green:C.muted},{l:"Active",v:stats.active,c:C.blue},{l:"Closed",v:stats.closed,c:C.green},{l:"Revenue",v:`$${stats.revenue.toLocaleString()}`,c:C.green}].map(s=>(
             <div key={s.l} style={{textAlign:"center"}}>
@@ -1129,6 +1259,7 @@ function BuyerCRM({flash}) {
                   <div style={{display:"flex",flexDirection:"column",gap:"0.5rem",marginBottom:"1.5rem"}}>
                     {todayActions.map((action, i) => {
                       const {prospect: p, step, sequence: seq, overdue, stepIndex} = action;
+                      const pVert = getVertical(p.vertical || "dumpster");
                       return (
                         <div key={p.place_id+"-"+stepIndex} style={{
                           background:C.card, border:`1px solid ${overdue?"rgba(239,68,68,0.3)":C.border}`,
@@ -1139,13 +1270,17 @@ function BuyerCRM({flash}) {
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:4}}>
                               <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{p.name}</span>
+                              {/* Vertical badge */}
+                              <span style={{fontSize:8,fontWeight:700,color:pVert.color,background:`${pVert.color}18`,padding:"1px 6px",borderRadius:100}}>
+                                {pVert.icon} {pVert.label.split(" ")[0]}
+                              </span>
                               {overdue && <span style={{fontSize:9,fontWeight:700,color:C.red,background:"rgba(239,68,68,0.15)",padding:"1px 6px",borderRadius:100}}>OVERDUE</span>}
                               <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{seq.name} · Step {stepIndex+1}/{seq.steps.length}</span>
                             </div>
                             <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>
                               {step.label}
                             </div>
-                            {/* Show template preview */}
+                            {/* Template preview */}
                             <div style={{background:"rgba(0,0,0,0.25)",borderRadius:6,padding:"0.55rem",marginBottom:8,maxHeight:120,overflowY:"auto"}}>
                               {step.subject && <div style={{fontSize:10,color:C.amber,marginBottom:3}}>Subject: {fillTemplate(step.subject, p)}</div>}
                               <div style={{fontSize:10,color:C.text,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{fillTemplate(step.template, p).slice(0, 300)}{fillTemplate(step.template, p).length > 300 ? "…" : ""}</div>
@@ -1195,20 +1330,24 @@ function BuyerCRM({flash}) {
                     <span>⚠️</span> {unenrolled.length} prospect{unenrolled.length>1?"s":""} not in a sequence
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:"0.5rem"}}>
-                    {unenrolled.map(p => (
-                      <div key={p.place_id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"0.65rem"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:3}}>{p.name}</div>
-                        <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{p.formatted_phone_number || "No phone"} · {p.vicinity}</div>
-                        <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
-                          {SEQUENCES.map(seq => (
-                            <button key={seq.id} onClick={()=>enrollInSequence(p.place_id, seq.id)}
-                              style={{...btnBase,background:"rgba(167,139,250,0.1)",color:C.purple,border:`1px solid rgba(167,139,250,0.2)`,fontSize:9,padding:"0.2rem 0.5rem"}}>
-                              🚀 {seq.name.split("—")[0].trim()}
-                            </button>
-                          ))}
+                    {unenrolled.map(p => {
+                      // Only show sequences matching this prospect's vertical
+                      const pSeqs = SEQUENCES.filter(s => s.vertical === (p.vertical || "dumpster"));
+                      return (
+                        <div key={p.place_id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"0.65rem"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:3}}>{p.name}</div>
+                          <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{p.formatted_phone_number || "No phone"} · {p.vicinity}</div>
+                          <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                            {pSeqs.map(seq => (
+                              <button key={seq.id} onClick={()=>enrollInSequence(p.place_id, seq.id)}
+                                style={{...btnBase,background:"rgba(167,139,250,0.1)",color:C.purple,border:`1px solid rgba(167,139,250,0.2)`,fontSize:9,padding:"0.2rem 0.5rem"}}>
+                                🚀 {seq.name.split("—")[0].trim()}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -1222,15 +1361,22 @@ function BuyerCRM({flash}) {
         <div style={{flex:1,overflow:"auto",padding:"0.85rem"}}>
           <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:"0.75rem"}}>🔄 Outreach Sequences</div>
 
-          {/* Sequence templates */}
+          {/* Sequence templates — filtered by active vertical */}
           <div style={{display:"flex",flexDirection:"column",gap:"0.65rem",marginBottom:"1.5rem"}}>
-            {SEQUENCES.map(seq => {
-              const enrolled = pipeline.filter(p => p.sequence === seq.id);
+            {verticalSequences.map(seq => {
+              const enrolled = filteredPipeline.filter(p => p.sequence === seq.id);
+              const seqVert = getVertical(seq.vertical);
               return (
                 <div key={seq.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
-                      <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{seq.name}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{seq.name}</div>
+                        {/* Vertical badge on sequence */}
+                        <span style={{fontSize:8,fontWeight:700,color:seqVert.color,background:`${seqVert.color}18`,padding:"1px 6px",borderRadius:100}}>
+                          {seqVert.icon} {seqVert.label.split(" ")[0]}
+                        </span>
+                      </div>
                       <div style={{fontSize:10,color:C.muted,marginTop:2}}>{seq.description}</div>
                     </div>
                     <div style={{fontSize:11,color:enrolled.length>0?C.purple:C.muted,fontWeight:700}}>
@@ -1273,16 +1419,18 @@ function BuyerCRM({flash}) {
                       })}
                     </div>
                   )}
-                  {/* Quick enroll */}
-                  {unenrolled.length > 0 && (
+                  {/* Quick enroll — only unenrolled prospects matching this sequence's vertical */}
+                  {unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).length > 0 && (
                     <div style={{marginTop:8,display:"flex",gap:3,flexWrap:"wrap"}}>
-                      {unenrolled.slice(0,5).map(p => (
+                      {unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).slice(0,5).map(p => (
                         <button key={p.place_id} onClick={()=>enrollInSequence(p.place_id, seq.id)}
                           style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,padding:"0.2rem 0.5rem"}}>
                           + {p.name}
                         </button>
                       ))}
-                      {unenrolled.length > 5 && <span style={{fontSize:9,color:C.muted,alignSelf:"center"}}>+{unenrolled.length-5} more</span>}
+                      {unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).length > 5 && (
+                        <span style={{fontSize:9,color:C.muted,alignSelf:"center"}}>+{unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).length-5} more</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1290,10 +1438,10 @@ function BuyerCRM({flash}) {
             })}
           </div>
 
-          {/* Activity feed */}
+          {/* Activity feed — from filteredPipeline */}
           <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:"0.5rem"}}>📋 Recent Activity</div>
           <div style={{display:"flex",flexDirection:"column",gap:3}}>
-            {pipeline
+            {filteredPipeline
               .flatMap(p => (p.activities || []).map(a => ({...a, bizName: p.name, place_id: p.place_id})))
               .sort((a,b) => new Date(b.date) - new Date(a.date))
               .slice(0, 20)
@@ -1306,7 +1454,7 @@ function BuyerCRM({flash}) {
                 </div>
               ))
             }
-            {pipeline.flatMap(p => p.activities || []).length === 0 && (
+            {filteredPipeline.flatMap(p => p.activities || []).length === 0 && (
               <div style={{padding:"1rem",textAlign:"center",color:C.muted,fontSize:11}}>No activity yet. Enroll prospects in sequences to get started.</div>
             )}
           </div>
@@ -1315,182 +1463,264 @@ function BuyerCRM({flash}) {
 
       {/* ══════════ PIPELINE VIEW ══════════ */}
       {crmView==="pipeline"&&(
-        <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto",overflowY:"auto",minHeight:0}}>
-          {STAGES.map(stage=>{
-            const cards=pipeline.filter(p=>p.stage===stage);
-            return(
-              <div key={stage} style={{width:260,minWidth:260,flexShrink:0,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"0.35rem",padding:"0.3rem 0.35rem 0.55rem",borderBottom:`2px solid ${STAGE_COLORS[stage]}`}}>
-                  <span style={{fontSize:11,fontWeight:800,color:STAGE_COLORS[stage]}}>{STAGE_LABELS[stage]}</span>
-                  <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{cards.length}</span>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:"0.4rem",minHeight:50,flex:1,overflowY:"auto",paddingTop:"0.4rem"}}>
-                  {cards.map(p=>{
-                    const isOpen = selected?.place_id===p.place_id;
-                    const seq = SEQUENCES.find(s=>s.id===p.sequence);
-                    const step = seq?.steps[p.sequenceStep];
-                    return (
-                      <div key={p.place_id} ref={el=>{if(isOpen&&el)el.scrollIntoView({behavior:"smooth",block:"nearest"})}}
-                        style={{background:isOpen?"#1a3349":C.card,
-                          border:`1px solid ${isOpen?C.blue:C.border}`,
-                          borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
-                          borderRadius:8}}>
-                        {/* Card header — always visible */}
-                        <div onClick={()=>setSelected(isOpen?null:p)}
-                          style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.35,marginBottom:3}}>{p.short_name||p.name}</div>
-                              {p.default_zone&&<span style={{fontSize:9,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 6px",borderRadius:100}}>Zone {p.default_zone}</span>}
-                            </div>
-                            <span style={{fontSize:12,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:6}}>{isOpen?"▾":"▸"}</span>
-                          </div>
-                          <div style={{fontSize:10,color:C.amber,marginTop:2}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
-                          {p.sequence && (
-                            <div style={{fontSize:9,color:C.purple,marginTop:3}}>
-                              🔄 {seq?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
-                            </div>
-                          )}
-                          {p.notes&&!isOpen&&<div style={{fontSize:10,color:C.muted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
-                        </div>
-                        {/* Expanded detail — inline */}
-                        {isOpen&&(
-                          <div style={{padding:"0 0.65rem 0.65rem",display:"flex",flexDirection:"column",gap:"0.5rem",borderTop:`1px solid ${C.border}`}}>
-                            {/* Contact */}
-                            <div style={{paddingTop:"0.5rem"}}>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>CONTACT</div>
-                              {p.formatted_phone_number&&(
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                  <span style={{fontSize:11,color:C.text}}>{p.formatted_phone_number}</span>
-                                  <a href={`tel:+1${cleanPhone(p.formatted_phone_number)}`}
-                                     style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+          {/* ── ZONE GRID (10 cells, single row) ── */}
+          <div style={{padding:"0.5rem 0.75rem",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+            <div style={{display:"flex",gap:"0.3rem",alignItems:"center"}}>
+              <span style={{fontSize:9,color:C.muted,whiteSpace:"nowrap",marginRight:4}}>ZONES</span>
+              {Array.from({length:10},(_,i)=>i+1).map(zone=>{
+                const zStatus = getZoneStatus(zone);
+                const zColor = zStatus==="active"?C.green:zStatus==="pilot"?C.amber:C.muted;
+                const zBg    = zStatus==="active"?"rgba(34,197,94,0.12)":zStatus==="pilot"?"rgba(245,158,11,0.1)":"rgba(255,255,255,0.03)";
+                const zLabel = zStatus==="active"?"●":zStatus==="pilot"?"◐":"○";
+                return (
+                  <div key={zone} style={{flex:1,textAlign:"center",padding:"0.25rem 0.1rem",background:zBg,border:`1px solid ${zColor}30`,borderRadius:5}}>
+                    <div style={{fontSize:9,fontWeight:800,color:zColor}}>{zone}</div>
+                    <div style={{fontSize:7,color:zColor,marginTop:1}}>{zLabel}</div>
+                  </div>
+                );
+              })}
+              {/* Legend */}
+              <div style={{display:"flex",gap:"0.65rem",marginLeft:8,flexShrink:0}}>
+                {[{c:C.green,l:"Active"},{c:C.amber,l:"Pilot"},{c:C.muted,l:"Open"}].map(({c,l})=>(
+                  <span key={l} style={{fontSize:8,color:c,whiteSpace:"nowrap"}}>● {l}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── OPERATOR BLOCK ── */}
+          <div style={{padding:"0.5rem 0.75rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,overflowX:"auto"}}>
+            {operatorProspects.length === 0 ? (
+              <div style={{fontSize:10,color:C.muted,padding:"0.3rem 0"}}>
+                No operators yet — add prospects and move to pilot_active
+              </div>
+            ) : (
+              <div style={{display:"flex",gap:"0.5rem"}}>
+                {operatorProspects.map(op => {
+                  const opVert = getVertical(op.vertical || "dumpster");
+                  const csaSigned = op.stage === "closed";
+                  return (
+                    <div key={op.place_id} style={{background:C.card,border:`1px solid ${csaSigned?C.green+"44":C.border}`,borderRadius:8,padding:"0.5rem 0.75rem",minWidth:170,flexShrink:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"0.35rem",marginBottom:3}}>
+                        <span style={{fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:100}}>{op.short_name||op.name}</span>
+                        {/* Vertical badge */}
+                        <span style={{fontSize:8,fontWeight:700,color:opVert.color,background:`${opVert.color}18`,padding:"1px 5px",borderRadius:100,flexShrink:0}}>
+                          {opVert.icon}
+                        </span>
+                      </div>
+                      <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:3}}>
+                        {/* CSA status */}
+                        <span style={{fontSize:8,fontWeight:700,padding:"1px 6px",borderRadius:100,
+                          color:csaSigned?C.green:C.amber,background:csaSigned?"rgba(34,197,94,0.12)":"rgba(245,158,11,0.1)"}}>
+                          {csaSigned?"✅ CSA Signed":"⏳ Pilot"}
+                        </span>
+                        {/* Zone */}
+                        {op.default_zone&&(
+                          <span style={{fontSize:8,color:C.purple,background:"rgba(167,139,250,0.12)",padding:"1px 6px",borderRadius:100}}>
+                            Zone {op.default_zone}
+                          </span>
+                        )}
+                      </div>
+                      {/* Last contact */}
+                      {op.lastContact&&(
+                        <div style={{fontSize:8,color:C.muted}}>Last: {ago(op.lastContact)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── PIPELINE KANBAN ── */}
+          <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto",overflowY:"auto",minHeight:0}}>
+            {STAGES.map(stage=>{
+              const cards=filteredPipeline.filter(p=>p.stage===stage);
+              return(
+                <div key={stage} style={{width:260,minWidth:260,flexShrink:0,display:"flex",flexDirection:"column",background:"rgba(0,0,0,0.15)",borderRadius:10,padding:"0.45rem"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"0.35rem",padding:"0.3rem 0.35rem 0.55rem",borderBottom:`2px solid ${STAGE_COLORS[stage]}`}}>
+                    <span style={{fontSize:11,fontWeight:800,color:STAGE_COLORS[stage]}}>{STAGE_LABELS[stage]}</span>
+                    <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{cards.length}</span>
+                  </div>
+                  {/* Empty state for zero-card columns */}
+                  <div style={{display:"flex",flexDirection:"column",gap:"0.4rem",minHeight:50,flex:1,overflowY:"auto",paddingTop:"0.4rem"}}>
+                    {cards.map(p=>{
+                      const isOpen = selected?.place_id===p.place_id;
+                      const seq = SEQUENCES.find(s=>s.id===p.sequence);
+                      const step = seq?.steps[p.sequenceStep];
+                      const pVert = getVertical(p.vertical || "dumpster");
+                      return (
+                        <div key={p.place_id} ref={el=>{if(isOpen&&el)el.scrollIntoView({behavior:"smooth",block:"nearest"})}}
+                          style={{background:isOpen?"#1a3349":C.card,
+                            border:`1px solid ${isOpen?C.blue:C.border}`,
+                            borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
+                            borderRadius:8}}>
+                          {/* Card header — always visible */}
+                          <div onClick={()=>setSelected(isOpen?null:p)}
+                            style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.35,marginBottom:3}}>{p.short_name||p.name}</div>
+                                <div style={{display:"flex",gap:"0.3rem",flexWrap:"wrap",alignItems:"center"}}>
+                                  {p.default_zone&&<span style={{fontSize:9,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 6px",borderRadius:100}}>Zone {p.default_zone}</span>}
+                                  {/* Vertical badge on pipeline card */}
+                                  <span style={{fontSize:8,fontWeight:700,color:pVert.color,background:`${pVert.color}18`,padding:"1px 5px",borderRadius:100}}>
+                                    {pVert.icon} {pVert.label.split(" ")[0]}
+                                  </span>
                                 </div>
-                              )}
-                              {p.email?(
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                  <span style={{fontSize:11,color:C.text}}>{p.email}</span>
-                                  <a href={`mailto:${p.email}`}
-                                     style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️</a>
-                                </div>
-                              ):(
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                  <span style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>No email</span>
-                                  <button onClick={()=>findEmail(p)} disabled={emailSearching[p.place_id||p.id]}
-                                    style={{...btnBase,background:"rgba(99,102,241,0.1)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,padding:"0.15rem 0.5rem",fontSize:9}}>
-                                    {emailSearching[p.place_id||p.id]?"⏳ Searching…":"🔍 Find Email"}
-                                  </button>
-                                </div>
-                              )}
-                              {p.vicinity&&<div style={{fontSize:9,color:C.muted}}>{p.vicinity}</div>}
-                              {p.website&&<a href={p.website.startsWith("http")?p.website:`https://${p.website}`} target="_blank" rel="noreferrer" style={{fontSize:9,color:C.blue,textDecoration:"none"}}>{p.website}</a>}
-                            </div>
-                            {/* Score */}
-                            <div>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>SCORE</div>
-                              <div style={{background:"rgba(0,0,0,0.3)",borderRadius:3,height:4,marginBottom:3}}>
-                                <div style={{width:`${p.score||qualifyScore(p)}%`,height:"100%",background:`linear-gradient(90deg,${C.blue},${C.purple})`,borderRadius:3}}/>
                               </div>
-                              <div style={{fontSize:10,color:"#fff"}}>{p.score||qualifyScore(p)}/100</div>
+                              <span style={{fontSize:12,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:6}}>{isOpen?"▾":"▸"}</span>
                             </div>
-                            {/* Sequence */}
-                            <div>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>SEQUENCE</div>
-                              {p.sequence ? (
-                                <div>
-                                  <div style={{fontSize:10,color:C.purple,fontWeight:700,marginBottom:2}}>{seq?.name}</div>
-                                  <div style={{fontSize:10,color:C.text}}>Current: {step?.label} (Day {step?.day})</div>
-                                  <div style={{fontSize:9,color:C.muted,marginTop:1}}>Step {(p.sequenceStep||0)+1} of {seq?.steps.length}</div>
-                                  <div style={{display:"flex",gap:3,marginTop:5}}>
-                                    <button onClick={()=>completeStep(p.place_id)}
-                                      style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>✅ Done</button>
-                                    <button onClick={()=>skipStep(p.place_id)}
-                                      style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>⏭ Skip</button>
-                                    <button onClick={()=>unenrollSequence(p.place_id)}
-                                      style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>✕</button>
+                            <div style={{fontSize:10,color:C.amber,marginTop:2}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
+                            {p.sequence && (
+                              <div style={{fontSize:9,color:C.purple,marginTop:3}}>
+                                🔄 {seq?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
+                              </div>
+                            )}
+                            {p.notes&&!isOpen&&<div style={{fontSize:10,color:C.muted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
+                          </div>
+                          {/* Expanded detail — inline */}
+                          {isOpen&&(
+                            <div style={{padding:"0 0.65rem 0.65rem",display:"flex",flexDirection:"column",gap:"0.5rem",borderTop:`1px solid ${C.border}`}}>
+                              {/* Contact */}
+                              <div style={{paddingTop:"0.5rem"}}>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>CONTACT</div>
+                                {p.formatted_phone_number&&(
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                    <span style={{fontSize:11,color:C.text}}>{p.formatted_phone_number}</span>
+                                    <a href={`tel:+1${cleanPhone(p.formatted_phone_number)}`}
+                                       style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
                                   </div>
+                                )}
+                                {p.email?(
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                    <span style={{fontSize:11,color:C.text}}>{p.email}</span>
+                                    <a href={`mailto:${p.email}`}
+                                       style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️</a>
+                                  </div>
+                                ):(
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                    <span style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>No email</span>
+                                    <button onClick={()=>findEmail(p)} disabled={emailSearching[p.place_id||p.id]}
+                                      style={{...btnBase,background:"rgba(99,102,241,0.1)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,padding:"0.15rem 0.5rem",fontSize:9}}>
+                                      {emailSearching[p.place_id||p.id]?"⏳ Searching…":"🔍 Find Email"}
+                                    </button>
+                                  </div>
+                                )}
+                                {p.vicinity&&<div style={{fontSize:9,color:C.muted}}>{p.vicinity}</div>}
+                                {p.website&&<a href={p.website.startsWith("http")?p.website:`https://${p.website}`} target="_blank" rel="noreferrer" style={{fontSize:9,color:C.blue,textDecoration:"none"}}>{p.website}</a>}
+                              </div>
+                              {/* Score */}
+                              <div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>SCORE</div>
+                                <div style={{background:"rgba(0,0,0,0.3)",borderRadius:3,height:4,marginBottom:3}}>
+                                  <div style={{width:`${p.score||qualifyScore(p)}%`,height:"100%",background:`linear-gradient(90deg,${C.blue},${C.purple})`,borderRadius:3}}/>
                                 </div>
-                              ) : (
-                                <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                                  <div style={{fontSize:10,color:C.muted,marginBottom:2}}>Not enrolled</div>
-                                  {SEQUENCES.map(sq => (
-                                    <button key={sq.id} onClick={()=>enrollInSequence(p.place_id, sq.id)}
-                                      style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,justifyContent:"flex-start",padding:"0.2rem 0.4rem"}}>
-                                      🚀 {sq.name}
+                                <div style={{fontSize:10,color:"#fff"}}>{p.score||qualifyScore(p)}/100</div>
+                              </div>
+                              {/* Sequence — filtered to prospect's vertical */}
+                              <div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>SEQUENCE</div>
+                                {p.sequence ? (
+                                  <div>
+                                    <div style={{fontSize:10,color:C.purple,fontWeight:700,marginBottom:2}}>{seq?.name}</div>
+                                    <div style={{fontSize:10,color:C.text}}>Current: {step?.label} (Day {step?.day})</div>
+                                    <div style={{fontSize:9,color:C.muted,marginTop:1}}>Step {(p.sequenceStep||0)+1} of {seq?.steps.length}</div>
+                                    <div style={{display:"flex",gap:3,marginTop:5}}>
+                                      <button onClick={()=>completeStep(p.place_id)}
+                                        style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>✅ Done</button>
+                                      <button onClick={()=>skipStep(p.place_id)}
+                                        style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>⏭ Skip</button>
+                                      <button onClick={()=>unenrollSequence(p.place_id)}
+                                        style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>✕</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                                    <div style={{fontSize:10,color:C.muted,marginBottom:2}}>Not enrolled</div>
+                                    {/* Only show sequences matching this prospect's vertical */}
+                                    {SEQUENCES.filter(sq => sq.vertical === (p.vertical || "dumpster")).map(sq => (
+                                      <button key={sq.id} onClick={()=>enrollInSequence(p.place_id, sq.id)}
+                                        style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,justifyContent:"flex-start",padding:"0.2rem 0.4rem"}}>
+                                        🚀 {sq.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Stage */}
+                              <div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>STAGE</div>
+                                <div style={{display:"flex",flexWrap:"wrap",gap:2}}>
+                                  {STAGES.map(s=>(
+                                    <button key={s} onClick={()=>updateStage(p.place_id,s)}
+                                      style={{...btnBase,padding:"0.2rem 0.4rem",fontSize:9,
+                                        background:p.stage===s?`${STAGE_COLORS[s]}25`:"transparent",
+                                        color:p.stage===s?"#fff":C.muted,
+                                        border:`1px solid ${p.stage===s?STAGE_COLORS[s]:"transparent"}`}}>
+                                      {STAGE_LABELS[s]}
                                     </button>
                                   ))}
                                 </div>
-                              )}
-                            </div>
-                            {/* Stage */}
-                            <div>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>STAGE</div>
-                              <div style={{display:"flex",flexWrap:"wrap",gap:2}}>
-                                {STAGES.map(s=>(
-                                  <button key={s} onClick={()=>updateStage(p.place_id,s)}
-                                    style={{...btnBase,padding:"0.2rem 0.4rem",fontSize:9,
-                                      background:p.stage===s?`${STAGE_COLORS[s]}25`:"transparent",
-                                      color:p.stage===s?"#fff":C.muted,
-                                      border:`1px solid ${p.stage===s?STAGE_COLORS[s]:"transparent"}`}}>
-                                    {STAGE_LABELS[s]}
-                                  </button>
-                                ))}
                               </div>
-                            </div>
-                            {/* AI Outreach */}
-                            <div>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>AI OUTREACH</div>
-                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-                                {["email","coldcall","sms","letter"].map(t=>(
-                                  <button key={t} onClick={()=>generate(p,t)}
-                                    style={{...btnBase,background:"rgba(56,189,248,0.08)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:9,justifyContent:"center",padding:"0.25rem"}}>
-                                    {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            {/* Notes */}
-                            <div>
-                              <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>NOTES</div>
-                              <textarea value={p.notes||""}
-                                onChange={e=>{
-                                  const val=e.target.value;
-                                  setSelected(s=>({...s,notes:val}));
-                                  setPipeline(prev=>prev.map(x=>x.place_id===p.place_id?{...x,notes:val}:x));
-                                  updateNotes(p.place_id,val);
-                                }}
-                                placeholder="Add notes…"
-                                style={{width:"100%",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:10,padding:"0.3rem",fontFamily:"inherit",minHeight:40,resize:"vertical",boxSizing:"border-box"}}/>
-                            </div>
-                            {/* Activity log */}
-                            {(p.activities||[]).length > 0 && (
+                              {/* AI Outreach */}
                               <div>
-                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>ACTIVITY</div>
-                                <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:100,overflowY:"auto"}}>
-                                  {[...(p.activities||[])].reverse().slice(0,5).map((a, i) => (
-                                    <div key={i} style={{display:"flex",gap:"0.3rem",alignItems:"flex-start"}}>
-                                      <span style={{fontSize:9,flexShrink:0}}>{TYPE_ICONS[a.type] || "📌"}</span>
-                                      <span style={{fontSize:8,color:C.text,flex:1,lineHeight:1.3}}>{a.note}</span>
-                                      <span style={{fontSize:7,color:C.muted,whiteSpace:"nowrap",flexShrink:0}}>{ago(a.date)}</span>
-                                    </div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>AI OUTREACH</div>
+                                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
+                                  {["email","coldcall","sms","letter"].map(t=>(
+                                    <button key={t} onClick={()=>generate(p,t)}
+                                      style={{...btnBase,background:"rgba(56,189,248,0.08)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:9,justifyContent:"center",padding:"0.25rem"}}>
+                                      {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
+                                    </button>
                                   ))}
                                 </div>
                               </div>
-                            )}
-                            {/* Remove */}
-                            <button onClick={()=>removeFromPipeline(p.place_id)}
-                              style={{...btnBase,background:"rgba(239,68,68,0.1)",color:C.red,border:`1px solid rgba(239,68,68,0.2)`,justifyContent:"center",fontSize:9,padding:"0.25rem"}}>
-                              Remove from Pipeline
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {cards.length===0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.1)",textAlign:"center",padding:"0.85rem 0"}}>empty</div>}
+                              {/* Notes */}
+                              <div>
+                                <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:3}}>NOTES</div>
+                                <textarea value={p.notes||""}
+                                  onChange={e=>{
+                                    const val=e.target.value;
+                                    setSelected(s=>({...s,notes:val}));
+                                    setPipeline(prev=>prev.map(x=>x.place_id===p.place_id?{...x,notes:val}:x));
+                                    updateNotes(p.place_id,val);
+                                  }}
+                                  placeholder="Add notes…"
+                                  style={{width:"100%",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:10,padding:"0.3rem",fontFamily:"inherit",minHeight:40,resize:"vertical",boxSizing:"border-box"}}/>
+                              </div>
+                              {/* Activity log */}
+                              {(p.activities||[]).length > 0 && (
+                                <div>
+                                  <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>ACTIVITY</div>
+                                  <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:100,overflowY:"auto"}}>
+                                    {[...(p.activities||[])].reverse().slice(0,5).map((a, i) => (
+                                      <div key={i} style={{display:"flex",gap:"0.3rem",alignItems:"flex-start"}}>
+                                        <span style={{fontSize:9,flexShrink:0}}>{TYPE_ICONS[a.type] || "📌"}</span>
+                                        <span style={{fontSize:8,color:C.text,flex:1,lineHeight:1.3}}>{a.note}</span>
+                                        <span style={{fontSize:7,color:C.muted,whiteSpace:"nowrap",flexShrink:0}}>{ago(a.date)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Remove */}
+                              <button onClick={()=>removeFromPipeline(p.place_id)}
+                                style={{...btnBase,background:"rgba(239,68,68,0.1)",color:C.red,border:`1px solid rgba(239,68,68,0.2)`,justifyContent:"center",fontSize:9,padding:"0.25rem"}}>
+                                Remove from Pipeline
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {cards.length===0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.1)",textAlign:"center",padding:"0.85rem 0"}}>empty</div>}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1541,6 +1771,8 @@ function BuyerCRM({flash}) {
               </>
             )}
           </div>
+
+          {/* ── Add Prospect form — includes vertical selector ── */}
           {showAddForm&&(
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem",marginBottom:"0.75rem"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:"0.6rem"}}>➕ Add New Prospect</div>
@@ -1548,27 +1780,43 @@ function BuyerCRM({flash}) {
                 {[["name","Company Name *"],["formatted_phone_number","Phone"],["vicinity","Address / City"],["website","Website"],["rating","Rating (0-5)"],["user_ratings_total","# Reviews"]].map(([k,label])=>(
                   <div key={k}>
                     <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{label}</div>
-                    <input value={newBiz[k]} onChange={e=>setNewBiz(b=>({...b,[k]:e.target.value}))}
+                    <input value={newBiz[k]||""} onChange={e=>setNewBiz(b=>({...b,[k]:e.target.value}))}
                       style={{width:"100%",boxSizing:"border-box",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:11,padding:"0.3rem 0.45rem",fontFamily:"inherit"}}/>
                   </div>
                 ))}
               </div>
+              {/* Vertical selector */}
+              <div style={{marginBottom:"0.4rem"}}>
+                <div style={{fontSize:9,color:C.muted,marginBottom:4}}>Vertical</div>
+                <div style={{display:"flex",gap:4}}>
+                  {VERTICALS.map(v=>(
+                    <button key={v.id} onClick={()=>setNewBiz(b=>({...b,vertical:v.id}))}
+                      style={{...btnBase,padding:"0.25rem 0.65rem",fontSize:10,
+                        background:newBiz.vertical===v.id?`${v.color}18`:"rgba(255,255,255,0.04)",
+                        color:newBiz.vertical===v.id?v.color:C.muted,
+                        border:`1px solid ${newBiz.vertical===v.id?v.color+"55":"transparent"}`}}>
+                      {v.icon} {v.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div style={{marginBottom:"0.4rem"}}>
                 <div style={{fontSize:9,color:C.muted,marginBottom:2}}>Notes</div>
-                <input value={newBiz.notes} onChange={e=>setNewBiz(b=>({...b,notes:e.target.value}))}
+                <input value={newBiz.notes||""} onChange={e=>setNewBiz(b=>({...b,notes:e.target.value}))}
                   style={{width:"100%",boxSizing:"border-box",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:11,padding:"0.3rem 0.45rem",fontFamily:"inherit"}}/>
               </div>
               <div style={{display:"flex",gap:"0.4rem"}}>
                 <button onClick={async()=>{
                   if(!newBiz.name.trim()){flash("Name required","info");return;}
                   await addProspect(newBiz);
-                  setNewBiz({name:"",formatted_phone_number:"",vicinity:"",website:"",rating:"",user_ratings_total:"",notes:""});
+                  setNewBiz({name:"",formatted_phone_number:"",vicinity:"",website:"",rating:"",user_ratings_total:"",notes:"",vertical:"dumpster"});
                   setShowAddForm(false); setSearched(true);
                 }} style={{...btnBase,background:C.green,color:"#fff",fontSize:11}}>Save Prospect</button>
                 <button onClick={()=>setShowAddForm(false)} style={{...btnBase,background:"transparent",color:C.muted,fontSize:11}}>Cancel</button>
               </div>
             </div>
           )}
+
           {!searched&&(
             <div style={{textAlign:"center",padding:"3rem",color:C.muted}}>
               <img src="/logo.png" alt="Florence SC Services" style={{width:48,height:48,borderRadius:10,marginBottom:"0.6rem"}}/>
@@ -1579,8 +1827,10 @@ function BuyerCRM({flash}) {
           {searched&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:"0.6rem"}}>
               {prospects.filter(p=>{
-                // Only show discovery-stage prospects — enrolled/pipeline prospects belong in Pipeline view
+                // Only show discovery-stage prospects
                 if(p.stage !== "discovery") return false;
+                // Filter by active vertical (discovery prospects use p.vertical)
+                if(activeVertical !== "all" && (p.vertical || "dumpster") !== activeVertical) return false;
                 const s=qualifyScore(p);
                 if(filter==="qualified") return s>=55;
                 if(filter==="unqualified") return s<55;
@@ -1588,6 +1838,7 @@ function BuyerCRM({flash}) {
               }).sort((a,b)=>qualifyScore(b)-qualifyScore(a)).map(p=>{
                 const s=qualifyScore(p); const qual=s>=55;
                 const already=pipeline.some(pl=>pl.place_id===p.place_id);
+                const pVert = getVertical(p.vertical || "dumpster");
                 return(
                   <div key={p.place_id} style={{background:C.card,border:`1px solid ${qual?"rgba(34,197,94,0.2)":C.border}`,borderRadius:10,padding:"0.85rem",opacity:already?0.6:1}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -1597,10 +1848,14 @@ function BuyerCRM({flash}) {
                       </div>
                       <div style={{fontSize:11,fontWeight:700,color:s>=70?C.green:s>=55?C.amber:C.red,marginLeft:8}}>{s}/100</div>
                     </div>
-                    <div style={{display:"flex",gap:"0.5rem",marginBottom:8,flexWrap:"wrap"}}>
+                    <div style={{display:"flex",gap:"0.5rem",marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
                       <span style={{fontSize:10,color:C.amber}}>★ {p.rating}</span>
                       <span style={{fontSize:10,color:C.muted}}>{p.user_ratings_total} reviews</span>
                       {p.formatted_phone_number&&<span style={{fontSize:10,color:C.text}}>{p.formatted_phone_number}</span>}
+                      {/* Vertical badge */}
+                      <span style={{fontSize:8,fontWeight:700,color:pVert.color,background:`${pVert.color}18`,padding:"1px 5px",borderRadius:100}}>
+                        {pVert.icon} {pVert.label.split(" ")[0]}
+                      </span>
                     </div>
                     {p.notes&&<div style={{fontSize:10,color:C.blue,marginBottom:6,fontStyle:"italic"}}>💡 {p.notes}</div>}
                     <div style={{display:"flex",gap:3}}>
