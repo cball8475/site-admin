@@ -1935,8 +1935,17 @@ export default function App() {
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:C.dark,fontFamily:"'IBM Plex Sans',sans-serif",overflow:"hidden"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;600;800&display=swap');*{box-sizing:border-box;margin:0;padding:0;}::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:rgba(99,179,237,0.2);border-radius:2px;}input::placeholder,textarea::placeholder{color:rgba(200,223,240,0.3);}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes slide-in{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}`}</style>
       <div style={{height:46,background:C.panel,borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:"0.65rem",padding:"0 1rem",flexShrink:0}}>
-        <img src="/logo.png" alt="FSC" style={{width:24,height:24,borderRadius:5}}/>
-        <span style={{fontWeight:800,fontSize:13,color:"#fff",letterSpacing:"-0.02em"}}>Florence SC</span>
+        <svg viewBox="14 54 172 84" width="68" height="32" xmlns="http://www.w3.org/2000/svg" style={{flexShrink:0}}>
+          <line x1="18" y1="63" x2="182" y2="63" stroke="#ffffff" strokeWidth="1.5"/>
+          <line x1="18" y1="57" x2="18" y2="69" stroke="#ffffff" strokeWidth="1.5"/>
+          <line x1="182" y1="57" x2="182" y2="69" stroke="#ffffff" strokeWidth="1.5"/>
+          <circle cx="100" cy="63" r="3.5" fill="#C4801C"/>
+          <text x="100" y="122" textAnchor="middle" fontFamily="Georgia,'Times New Roman',serif" fontSize="62" fontWeight="700" fill="#ffffff" letterSpacing="10">FSC</text>
+          <line x1="18" y1="134" x2="182" y2="134" stroke="#ffffff" strokeWidth="1.5"/>
+          <line x1="18" y1="128" x2="18" y2="140" stroke="#ffffff" strokeWidth="1.5"/>
+          <line x1="182" y1="128" x2="182" y2="140" stroke="#ffffff" strokeWidth="1.5"/>
+        </svg>
+        <span style={{fontWeight:500,fontSize:10,color:"rgba(255,255,255,0.38)",letterSpacing:"0.08em",borderLeft:`1px solid ${C.border}`,paddingLeft:"0.6rem"}}>DASHBOARD</span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
           {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"]].map(([key,label])=>(
             <button key={key} onClick={()=>setMainTab(key)}
