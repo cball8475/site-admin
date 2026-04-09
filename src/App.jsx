@@ -406,6 +406,14 @@ function LeadsDashboard({flash}) {
     } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
+  async function updatePilotOutcome(pilotId, outcome) {
+    try {
+      await crm(`/pilot-leads/${pilotId}`, "PATCH", { outcome });
+      setPilotLeads(prev => prev.map(pl => pl.id===pilotId ? {...pl, outcome} : pl));
+      flash(`Pilot lead marked ${outcome} ✅`);
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
+  }
+
   async function deleteLead(id) {
     if(!confirm("Delete this lead permanently?")) return;
     try {
@@ -706,6 +714,18 @@ function LeadsDashboard({flash}) {
                     <span>Sent: <span style={{color:C.text}}>{fmtDate(pl.date_sent)}</span></span>
                   </div>
                   {pl.notes&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>📝 {pl.notes}</div>}
+                  {pl.outcome==="pending"&&(
+                    <div style={{display:"flex",gap:"0.5rem",marginTop:"0.6rem"}}>
+                      <button onClick={()=>updatePilotOutcome(pl.id,"won")}
+                        style={{flex:1,padding:"0.35rem",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"rgba(34,197,94,0.15)",color:C.green}}>
+                        ✅ Won
+                      </button>
+                      <button onClick={()=>updatePilotOutcome(pl.id,"lost")}
+                        style={{flex:1,padding:"0.35rem",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"rgba(239,68,68,0.12)",color:C.red}}>
+                        ❌ Lost
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1981,3 +2001,4 @@ export default function App() {
     </div>
   );
 }
+
