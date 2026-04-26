@@ -21,6 +21,47 @@ const C = {
   green: '#22c55e', amber: '#f59e0b', blue: '#38bdf8', red: '#ef4444', purple: '#a78bfa',
 };
 
+// ── Status (RYG) ──────────────────────────────────────────────────────────
+// Status = 'green' | 'yellow' | 'red' | null (neutral, no bar shown)
+const STATUS_COLOR = {
+  green: '#22c55e',
+  yellow: '#f59e0b',
+  red: '#ef4444',
+};
+
+// Trend-based status: compare current vs previous period.
+// Volatility floor: if both periods are below `minSample`, return null (neutral).
+// `lowerBetter`: for spend, CPC, position — flips so down = good.
+// `yellowMax`: % degradation that's still yellow (default 25). Beyond → red.
+function trendStatus(current, previous, opts = {}) {
+  const { lowerBetter = false, minSample = 0, yellowMax = 25 } = opts;
+  const c = Number(current) || 0;
+  const p = Number(previous) || 0;
+  if (c < minSample && p < minSample) return null;
+  if (!p) return null;
+  let pct = ((c - p) / p) * 100;
+  if (lowerBetter) pct = -pct;
+  if (pct >= 0) return 'green';
+  if (pct >= -yellowMax) return 'yellow';
+  return 'red';
+}
+
+// Absolute-band status: bucket a single value against fixed thresholds.
+// `lowerBetter`: ≤ greenAt is green (e.g. position, CPC).
+function absoluteStatus(value, opts = {}) {
+  const { greenAt, yellowAt, lowerBetter = false } = opts;
+  const v = Number(value);
+  if (isNaN(v)) return null;
+  if (lowerBetter) {
+    if (v <= greenAt) return 'green';
+    if (v <= yellowAt) return 'yellow';
+    return 'red';
+  }
+  if (v >= greenAt) return 'green';
+  if (v >= yellowAt) return 'yellow';
+  return 'red';
+}
+
 const fontStack = "'IBM Plex Sans', system-ui, sans-serif";
 const monoStack = "'IBM Plex Mono', monospace";
 
@@ -73,19 +114,29 @@ function Delta({ value, suffix = '%', invert = false }) {
   );
 }
 
-function StatCard({ label, value, sub, accent }) {
+function StatCard({ label, value, sub, accent, status }) {
+  const barColor = status ? STATUS_COLOR[status] : null;
+  const valueColor = barColor || accent || C.text;
   return (
     <div style={{
-      flex: '1 1 160px', minWidth: 0, padding: '14px 16px',
+      flex: '1 1 160px', minWidth: 0,
+      padding: barColor ? '17px 16px 14px' : '14px 16px',
       background: C.panel, border: `1px solid ${C.border}`,
       borderRadius: 10,
+      position: 'relative', overflow: 'hidden',
     }}>
+      {barColor && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+          background: barColor,
+        }} />
+      )}
       <div style={{
         fontSize: 10, color: C.muted, textTransform: 'uppercase',
         letterSpacing: 0.8, fontWeight: 600, marginBottom: 6,
       }}>{label}</div>
       <div style={{
-        fontSize: 22, fontWeight: 700, color: accent || C.text,
+        fontSize: 22, fontWeight: 700, color: valueColor,
         fontFamily: monoStack, lineHeight: 1.1,
       }}>{value}</div>
       {sub != null && (
@@ -280,48 +331,72 @@ export default function CompanySnapshot() {
       </div>
 
       {/* ── Top KPI Row ────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <StatCard
-          label="Active Operators"
-          value={stats?.active_operators ?? '—'}
-          sub={
-            stats?.active_pilots != null
-              ? `${stats.active_pilots} on trial`
-              : null
-          }
-          accent={(stats?.active_operators ?? 0) > 0 ? C.green : C.amber}
-        />
-        <StatCard
-          label={`Leads (${days}d)`}
-          value={leadsAnalytics?.total_leads ?? '—'}
-          sub={
-            leadsAnalytics?.avg_response_time_minutes != null
-              ? `${Math.round(leadsAnalytics.avg_response_time_minutes)}m avg response`
-              : null
-          }
-          accent={C.blue}
-        />
-        <StatCard
-          label="Conversion"
-          value={leadsAnalytics?.conversion_rate ?? '—'}
-          sub={
-            leadsAnalytics?.converted != null && leadsAnalytics?.resolved != null
-              ? `${leadsAnalytics.converted} of ${leadsAnalytics.resolved} resolved`
-              : null
-          }
-          accent={C.purple}
-        />
-        <StatCard
-          label={`Revenue (${days}d)`}
-          value={fmtMoney(leadsAnalytics?.total_revenue || 0)}
-          sub={
-            ads?.current?.totals?.spend != null
-              ? `Ad spend: ${fmtMoneyDecimal(ads.current.totals.spend)}`
-              : null
-          }
-          accent={(leadsAnalytics?.total_revenue || 0) > 0 ? C.green : C.muted}
-        />
-      </div>
+      {(() => {
+        // Status for top KPIs — bespoke per metric per the agreed thresholds
+        const activeOps = stats?.active_operators ?? 0;
+        const activePilots = stats?.active_pilots ?? 0;
+        const opsStatus = activeOps >= 1 ? 'green' : activePilots >= 1 ? 'yellow' : 'red';
+
+        const leadsStatus = leadsAnalytics?.total_leads != null
+          ? absoluteStatus(leadsAnalytics.total_leads, { greenAt: 10, yellowAt: 3 })
+          : null;
+
+        // Conversion: only judge if at least 3 leads have resolved
+        const convResolved = leadsAnalytics?.resolved ?? 0;
+        const convPct = parseFloat(leadsAnalytics?.conversion_rate); // "18.5%" → 18.5
+        const convStatus = (convResolved >= 3 && !isNaN(convPct))
+          ? absoluteStatus(convPct, { greenAt: 15, yellowAt: 5 })
+          : null;
+
+        // Revenue: green if any revenue at all; null otherwise (pre-CSA, $0 expected)
+        const revenue = leadsAnalytics?.total_revenue ?? 0;
+        const revStatus = revenue > 0 ? 'green' : null;
+
+        return (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <StatCard
+              label="Active Operators"
+              value={stats?.active_operators ?? '—'}
+              sub={
+                stats?.active_pilots != null
+                  ? `${stats.active_pilots} on trial`
+                  : null
+              }
+              status={opsStatus}
+            />
+            <StatCard
+              label={`Leads (${days}d)`}
+              value={leadsAnalytics?.total_leads ?? '—'}
+              sub={
+                leadsAnalytics?.avg_response_time_minutes != null
+                  ? `${Math.round(leadsAnalytics.avg_response_time_minutes)}m avg response`
+                  : null
+              }
+              status={leadsStatus}
+            />
+            <StatCard
+              label="Conversion"
+              value={leadsAnalytics?.conversion_rate ?? '—'}
+              sub={
+                leadsAnalytics?.converted != null && leadsAnalytics?.resolved != null
+                  ? `${leadsAnalytics.converted} of ${leadsAnalytics.resolved} resolved`
+                  : null
+              }
+              status={convStatus}
+            />
+            <StatCard
+              label={`Revenue (${days}d)`}
+              value={fmtMoney(leadsAnalytics?.total_revenue || 0)}
+              sub={
+                ads?.current?.totals?.spend != null
+                  ? `Ad spend: ${fmtMoneyDecimal(ads.current.totals.spend)}`
+                  : null
+              }
+              status={revStatus}
+            />
+          </div>
+        );
+      })()}
 
       {errors.stats && <div style={{ marginTop: 10 }}><ErrorBanner section="Stats" error={errors.stats} /></div>}
       {errors.leadsAnalytics && <div style={{ marginTop: 10 }}><ErrorBanner section="Lead analytics" error={errors.leadsAnalytics} /></div>}
@@ -531,15 +606,28 @@ function AdsPanel({ ads }) {
 
   const outOfZoneClicks = (ads.out_of_zone || []).reduce((s, g) => s + Number(g.clicks || 0), 0);
 
+  // Status calcs — see thresholds in CompanySnapshot doc block
+  const ctrNum = parseFloat(String(t.ctr ?? '').replace('%', ''));
+  const cpcNum = parseFloat(String(t.cpc ?? '').replace('$', ''));
+  const status = {
+    spend: trendStatus(t.spend, p.spend, { lowerBetter: true, minSample: 5 }),
+    clicks: trendStatus(t.clicks, p.clicks, { minSample: 3 }),
+    impressions: trendStatus(t.impressions, p.impressions, { minSample: 50 }),
+    ctr: !isNaN(ctrNum) ? absoluteStatus(ctrNum, { greenAt: 3, yellowAt: 1 }) : null,
+    cpc: !isNaN(cpcNum) && cpcNum > 0 ? absoluteStatus(cpcNum, { greenAt: 3, yellowAt: 6, lowerBetter: true }) : null,
+    // Conversions: green ≥1, yellow if 0 (only if there was meaningful spend)
+    conv: t.conversions >= 1 ? 'green' : (Number(t.spend) >= 5 ? 'yellow' : null),
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <MiniStat label="Spend" value={fmtMoneyDecimal(t.spend)} delta={deltaPct(t.spend, p.spend)} invert />
-        <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} />
-        <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} />
-        <MiniStat label="CTR" value={t.ctr || '—'} />
-        <MiniStat label="CPC" value={t.cpc || '—'} />
-        <MiniStat label="Conv" value={fmtNum(t.conversions)} delta={deltaPct(t.conversions, p.conversions)} />
+        <MiniStat label="Spend" value={fmtMoneyDecimal(t.spend)} delta={deltaPct(t.spend, p.spend)} invert status={status.spend} />
+        <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} status={status.clicks} />
+        <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} status={status.impressions} />
+        <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
+        <MiniStat label="CPC" value={t.cpc || '—'} status={status.cpc} />
+        <MiniStat label="Conv" value={fmtNum(t.conversions)} delta={deltaPct(t.conversions, p.conversions)} status={status.conv} />
       </div>
 
       {outOfZoneClicks > 0 && (
@@ -590,18 +678,27 @@ function AdsPanel({ ads }) {
   );
 }
 
-function MiniStat({ label, value, delta, invert }) {
+function MiniStat({ label, value, delta, invert, status }) {
+  const barColor = status ? STATUS_COLOR[status] : null;
   return (
     <div style={{
-      flex: '1 1 100px', minWidth: 0, padding: '8px 12px',
+      flex: '1 1 100px', minWidth: 0,
+      padding: barColor ? '11px 12px 8px' : '8px 12px',
       background: C.panel, border: `1px solid ${C.border}`,
       borderRadius: 8,
+      position: 'relative', overflow: 'hidden',
     }}>
+      {barColor && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+          background: barColor,
+        }} />
+      )}
       <div style={{
         fontSize: 9.5, color: C.muted, textTransform: 'uppercase',
         letterSpacing: 0.6, fontWeight: 600, marginBottom: 3,
       }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: monoStack }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: barColor || C.text, fontFamily: monoStack }}>
         {value}
         <Delta value={delta} invert={invert} />
       </div>
@@ -615,19 +712,28 @@ function SeoPanel({ seo }) {
   const p = seo.previous?.totals || {};
   const queries = seo.top_queries || [];
 
+  // Status calcs
+  const ctrNum = parseFloat(String(t.ctr ?? '').replace('%', ''));
+  const posNum = parseFloat(t.position);
+  const status = {
+    clicks: trendStatus(t.clicks, p.clicks, { minSample: 3 }),
+    impressions: trendStatus(t.impressions, p.impressions, { minSample: 50, yellowMax: 30 }),
+    ctr: !isNaN(ctrNum) ? absoluteStatus(ctrNum, { greenAt: 2, yellowAt: 0.5 }) : null,
+    position: !isNaN(posNum) ? absoluteStatus(posNum, { greenAt: 10, yellowAt: 30, lowerBetter: true }) : null,
+  };
+
+  // Position delta — for display only (lower position = improvement, so flip sign)
+  const posDelta = (!isNaN(posNum) && p.position && p.position !== 'N/A')
+    ? -1 * Math.round(((posNum - Number(p.position)) / Number(p.position)) * 100)
+    : null;
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} />
-        <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} />
-        <MiniStat label="CTR" value={t.ctr || '—'} />
-        <MiniStat
-          label="Avg Position"
-          value={t.position || '—'}
-          delta={t.position && p.position && p.position !== 'N/A'
-            ? -1 * Math.round((Number(t.position) - Number(p.position)) / Number(p.position) * 100)
-            : null}
-        />
+        <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} status={status.clicks} />
+        <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} status={status.impressions} />
+        <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
+        <MiniStat label="Avg Position" value={t.position || '—'} delta={posDelta} status={status.position} />
       </div>
 
       {queries.length > 0 && (
