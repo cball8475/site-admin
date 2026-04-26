@@ -191,6 +191,45 @@ function PendingPanel({ message }) {
   );
 }
 
+// Bottom-of-section interpretation block. tone: 'positive' | 'neutral' | 'attention' | 'critical'
+function InsightSummary({ tone = 'neutral', headline, action }) {
+  const accents = {
+    positive:  { bar: C.green,  bg: 'rgba(34,197,94,0.05)',  label: 'Healthy' },
+    neutral:   { bar: C.blue,   bg: 'rgba(56,189,248,0.04)', label: 'Snapshot' },
+    attention: { bar: C.amber,  bg: 'rgba(245,158,11,0.05)', label: 'Watch' },
+    critical:  { bar: C.red,    bg: 'rgba(239,68,68,0.05)',  label: 'Action needed' },
+  };
+  const a = accents[tone] || accents.neutral;
+  return (
+    <div style={{
+      marginTop: 12,
+      background: a.bg,
+      borderLeft: `3px solid ${a.bar}`,
+      borderTop: `1px solid ${C.border}`,
+      borderRight: `1px solid ${C.border}`,
+      borderBottom: `1px solid ${C.border}`,
+      borderRadius: '0 8px 8px 0',
+      padding: '12px 16px',
+    }}>
+      <div style={{
+        fontSize: 9.5, color: a.bar, textTransform: 'uppercase',
+        letterSpacing: 0.8, fontWeight: 700, marginBottom: 6,
+      }}>{a.label}</div>
+      <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55 }}>
+        {headline}
+      </div>
+      {action && (
+        <div style={{
+          marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`,
+          fontSize: 12, color: C.text, lineHeight: 1.5,
+        }}>
+          <strong style={{ color: a.bar }}>→ Action:</strong> {action}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BreakdownTable({ rows, labelKey = 'label', valueKey = 'value', total }) {
   const safeRows = rows || [];
   return (
@@ -993,6 +1032,55 @@ function CompetitorsPanel({ data }) {
           </table>
         </div>
       </details>
+
+      {/* Summary */}
+      {(() => {
+        const myShare = num(me?.impression_share);
+        const competitorShares = competitors
+          .map(c => num(c.impression_share))
+          .filter(v => v > 0);
+        const topCompShare = competitorShares.length ? Math.max(...competitorShares) : 0;
+        const multiple = topCompShare > 0 ? (myShare / topCompShare).toFixed(1) : null;
+        const topThreat = topThreats[0];
+        const topThreatPct = topThreat ? num(topThreat.position_above_rate) : 0;
+
+        let tone, headline, action;
+
+        if (myShare >= 30) {
+          tone = 'positive';
+          headline = (
+            <>
+              Dominant auction share at <strong>{myShare.toFixed(1)}%</strong>
+              {multiple && <> — {multiple}× your closest competitor</>}.
+              {topThreat && topThreatPct >= 40 && (
+                <> But <strong>{topThreat.domain}</strong> outranks you in <strong>{topThreatPct.toFixed(0)}%</strong> of head-to-head matchups, meaning you appear lower on the page when you both compete.</>
+              )}
+            </>
+          );
+          if (topThreat && topThreatPct >= 40) {
+            action = 'Raise bid caps on your highest-converting keywords (Florence + Darlington direct-rental terms) to close the rank gap. The $6 cap is keeping spend disciplined but ceding top spots to bidders willing to pay more.';
+          }
+        } else if (myShare >= 15) {
+          tone = 'neutral';
+          headline = (
+            <>
+              Competitive presence at <strong>{myShare.toFixed(1)}%</strong> impression share.
+              {topThreat && <> Biggest ranking threat: <strong>{topThreat.domain}</strong> ({topThreatPct.toFixed(0)}% outrank rate).</>}
+            </>
+          );
+          action = 'Hold strategy steady. Track impression share weekly — if it dips below 15%, increase budget or expand keyword targeting.';
+        } else {
+          tone = 'attention';
+          headline = (
+            <>
+              Trailing in auction share at <strong>{myShare.toFixed(1)}%</strong>. Competitors are winning more of the auctions you're targeting.
+            </>
+          );
+          action = 'Increase daily budget or broaden keyword targeting to capture more auction opportunities. Review search terms for coverage gaps.';
+        }
+
+        return <InsightSummary tone={tone} headline={headline} action={action} />;
+      })()}
     </div>
   );
 }
@@ -1122,6 +1210,58 @@ function BacklinksPanel({ data }) {
           </div>
         ))}
       </div>
+
+      {/* Summary */}
+      {(() => {
+        const total = data?.total_referring_domains || 0;
+        const editorial = data?.editorial_count ?? 0;
+        const breakdown = data?.type_breakdown || {};
+
+        let tone, headline, action;
+
+        if (total < 5) {
+          tone = 'critical';
+          const typeList = [];
+          if (breakdown.citation) typeList.push(`${breakdown.citation} citation${breakdown.citation > 1 ? 's' : ''}`);
+          if (breakdown.community) typeList.push(`${breakdown.community} community`);
+          if (breakdown.editorial) typeList.push(`${breakdown.editorial} editorial`);
+          headline = (
+            <>
+              Thin link profile. <strong>{total} referring domain{total !== 1 && 's'}</strong>
+              {typeList.length > 0 && <> ({typeList.join(', ')})</>}.
+              {editorial === 0 && <> Zero editorial links — that's the gap that holds back domain authority.</>}
+            </>
+          );
+          action = 'Pitch a local press story to Florence Morning News or SCNow — "small business connecting Pee Dee homeowners with local dumpster operators" is genuinely newsworthy at zero spend. Also look for guest-post opportunities on small-business or contractor blogs. One editorial link is worth roughly five citations for ranking.';
+        } else if (total < 15 || editorial === 0) {
+          tone = 'attention';
+          headline = (
+            <>
+              Building profile. <strong>{total} referring domains</strong>, {editorial} editorial.
+              {editorial === 0 && <> Domain authority comes primarily from editorial links — directory citations help local SEO but don't move organic ranking much.</>}
+            </>
+          );
+          action = 'Target one new editorial link per month — local press, industry blogs, or partner cross-links. When William signs CSA, swap links if his business has a site.';
+        } else if (total < 50) {
+          tone = 'neutral';
+          headline = (
+            <>
+              Developing profile. <strong>{total} referring domains</strong>, {editorial} editorial. Authority is growing.
+            </>
+          );
+          action = 'Continue building editorial links. Two per month sustains the trend.';
+        } else {
+          tone = 'positive';
+          headline = (
+            <>
+              Solid link profile. <strong>{total} referring domains</strong>, {editorial} editorial. Strong foundation for organic ranking.
+            </>
+          );
+          action = null;
+        }
+
+        return <InsightSummary tone={tone} headline={headline} action={action} />;
+      })()}
 
       {/* Action note */}
       <div style={{
@@ -1409,6 +1549,83 @@ function SeoPanel({ seo }) {
           ))}
         </details>
       )}
+
+      {/* Summary */}
+      {(() => {
+        const cClicks = Number(t.clicks) || 0;
+        const pClicks = Number(p.clicks) || 0;
+        const cPos = parseFloat(t.position);
+        const pPos = parseFloat(p.position);
+        const clickDelta = pClicks > 0 ? Math.round(((cClicks - pClicks) / pClicks) * 100) : null;
+        const posImprovement = !isNaN(cPos) && !isNaN(pPos) ? (pPos - cPos).toFixed(1) : null;
+
+        // Top CTR opportunity from pages
+        const ctrOpp = (seo.top_pages || []).find(p => {
+          const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+          return p.impressions >= 50 && ctrNum < 1 && Number(p.position) <= 30;
+        });
+        // Biggest ranking opportunity from queries
+        const bigOpp = opportunities[0];
+
+        let tone, headline, action;
+        const trendingUp = clickDelta != null && clickDelta > 0 && posImprovement != null && Number(posImprovement) > 0;
+        const trendingDown = clickDelta != null && clickDelta < -25 && posImprovement != null && Number(posImprovement) < 0;
+
+        if (trendingUp) {
+          tone = 'positive';
+          headline = (
+            <>
+              Strong upward trend.
+              {clickDelta > 50 && <> Clicks <strong>{clickDelta > 0 ? '+' : ''}{clickDelta}%</strong> vs prior period.</>}
+              {clickDelta <= 50 && clickDelta > 0 && <> Clicks up <strong>{clickDelta}%</strong>.</>}
+              {Number(posImprovement) > 2 && (
+                <> Average position improved <strong>{posImprovement} spots</strong> ({pPos.toFixed(1)} → {cPos.toFixed(1)}).</>
+              )}
+            </>
+          );
+        } else if (trendingDown) {
+          tone = 'attention';
+          headline = (
+            <>
+              Visibility softened. Clicks <strong>{clickDelta}%</strong> vs prior period and position drifted from {pPos.toFixed(1)} to {cPos.toFixed(1)}.
+            </>
+          );
+        } else {
+          tone = 'neutral';
+          headline = (
+            <>
+              {cClicks} click{cClicks !== 1 && 's'} on {fmtNum(t.impressions)} impressions, average position {t.position}.
+              {clickDelta != null && <> Clicks {clickDelta >= 0 ? '+' : ''}{clickDelta}% vs prior period.</>}
+            </>
+          );
+        }
+
+        // Build action from biggest visible opportunity
+        const actions = [];
+        if (bigOpp) {
+          actions.push(
+            <span key="opp">
+              Push <strong>"{bigOpp.query}"</strong> to page 1 — currently position {bigOpp.position} with {fmtNum(bigOpp.impressions)} impressions of demand.
+            </span>
+          );
+        }
+        if (ctrOpp) {
+          actions.push(
+            <span key="ctr">
+              Optimize title/meta on <strong>{ctrOpp.path}</strong> ({fmtNum(ctrOpp.impressions)} impressions, {ctrOpp.ctr} CTR — better headline → more clicks at zero ranking cost).
+            </span>
+          );
+        }
+        action = actions.length === 0 ? null : (
+          <span>
+            {actions.map((a, i) => (
+              <span key={i}>{i > 0 && <> </>}{a}</span>
+            ))}
+          </span>
+        );
+
+        return <InsightSummary tone={tone} headline={headline} action={action} />;
+      })()}
 
       {/* Competitor data note */}
       <div style={{
