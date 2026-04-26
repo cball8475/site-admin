@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import GoogleAdsTile from "./components/GoogleAdsTile";
+import CompanySnapshot from "./components/CompanySnapshot";
 
 // ══════════════════════════════════════════════════════════════
 // ENV — injected by Netlify at build time
@@ -1968,7 +1968,7 @@ export default function App() {
         </svg>
         <span style={{fontWeight:500,fontSize:10,color:"rgba(255,255,255,0.38)",letterSpacing:"0.08em",borderLeft:`1px solid ${C.border}`,paddingLeft:"0.6rem"}}>DASHBOARD</span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
-          {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"],["ads","📈 Ads"]].map(([key,label])=>(
+          {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"],["snapshot","📊 Snapshot"]].map(([key,label])=>(
             <button key={key} onClick={()=>setMainTab(key)}
               style={{...btnBase,padding:"0.25rem 0.75rem",fontSize:11,
                 background:mainTab===key?"rgba(56,189,248,0.15)":"transparent",
@@ -1992,9 +1992,9 @@ export default function App() {
       <div style={{display:mainTab==="crm"?"flex":"none",flex:1,overflow:"hidden"}}>
         <BuyerCRM flash={flash}/>
       </div>
-      <div style={{display:mainTab==="ads"?"flex":"none",flex:1,overflow:"hidden",padding:"1rem"}}>
-        <div style={{maxWidth:720,width:"100%"}}>
-          <GoogleAdsTile/>
+      <div style={{display:mainTab==="snapshot"?"flex":"none",flex:1,overflow:"auto",padding:"1.25rem"}}>
+        <div style={{maxWidth:1100,width:"100%",margin:"0 auto"}}>
+          <CompanySnapshot/>
         </div>
       </div>
       {toast&&(
