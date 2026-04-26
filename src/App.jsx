@@ -1948,7 +1948,7 @@ function BuyerCRM({flash}) {
 // ══════════════════════════════════════════════════════════════
 export default function App() {
   const [toast,setToast]               = useState(null);
-  const [mainTab,setMainTab]           = useState("crm");
+  const [mainTab,setMainTab]           = useState("snapshot");
 
   const flash = useCallback((t,type="ok")=>{setToast({t,type});setTimeout(()=>setToast(null),3500);},[]);
 
