@@ -238,6 +238,7 @@ export default function CompanySnapshot() {
   const [ads, setAds] = useState(null);
   const [seo, setSeo] = useState(null);
   const [operators, setOperators] = useState(null);
+  const [competitors, setCompetitors] = useState(null);
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
@@ -258,6 +259,7 @@ export default function CompanySnapshot() {
       ['ads', `/ads/metrics?days=${days}`, setAds],
       ['seo', `/seo/metrics?days=${days}`, setSeo],
       ['operators', '/prospects?operator_status=pilot_active', setOperators],
+      ['competitors', '/competitors/auction-insights', setCompetitors],
     ];
 
     await Promise.all(sources.map(async ([key, path, setter]) => {
@@ -432,6 +434,22 @@ export default function CompanySnapshot() {
           <ErrorBanner section="Google Ads" error={errors.ads} />
         ) : ads ? (
           <AdsPanel ads={ads} />
+        ) : null}
+      </Section>
+
+      {/* ── Competitors (Google Ads Auction Insights) ──────────────────── */}
+      <Section
+        title="Competitive Landscape"
+        right={competitors?.period_label || null}
+      >
+        {errors.competitors ? (
+          errors.competitors.includes('404') || errors.competitors.includes('Not found') ? (
+            <PendingPanel message="Competitor endpoint not yet deployed — deploy worker v2.11.2 to enable." />
+          ) : (
+            <ErrorBanner section="Competitors" error={errors.competitors} />
+          )
+        ) : competitors ? (
+          <CompetitorsPanel data={competitors} />
         ) : null}
       </Section>
 
@@ -710,6 +728,253 @@ function MiniStat({ label, value, delta, invert, status }) {
         {value}
         <Delta value={delta} invert={invert} />
       </div>
+    </div>
+  );
+}
+
+// ── Competitors Panel ──────────────────────────────────────────────────────
+function CompetitorsPanel({ data }) {
+  const rows = data?.rows || [];
+  if (rows.length === 0) {
+    return (
+      <div style={{
+        padding: '14px 16px', background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, fontSize: 12.5, color: C.muted,
+      }}>
+        No competitor data uploaded yet.
+      </div>
+    );
+  }
+
+  // Helper: render a value safely (handles {value, is_upper_bound} or null)
+  const fmtPct = (cell) => {
+    if (!cell) return '—';
+    return cell.is_upper_bound ? `<${cell.value}%` : `${cell.value.toFixed(2)}%`;
+  };
+  const num = (cell) => (cell ? cell.value : 0);
+
+  // Pull FSC's row
+  const me = rows.find(r => r.domain === 'You');
+  const competitors = rows.filter(r => r.domain !== 'You');
+
+  // Sort by impression share (desc, treating <10% as 9 for sort purposes)
+  const byImprShare = [...competitors].sort((a, b) => num(b.impression_share) - num(a.impression_share));
+
+  // Top ranking threats: highest position_above_rate (% of times they outrank you)
+  const topThreats = [...competitors]
+    .filter(r => r.position_above_rate)
+    .sort((a, b) => num(b.position_above_rate) - num(a.position_above_rate))
+    .slice(0, 3);
+
+  // Most direct competitors: highest overlap_rate
+  const mostDirect = [...competitors]
+    .filter(r => r.overlap_rate)
+    .sort((a, b) => num(b.overlap_rate) - num(a.overlap_rate))
+    .slice(0, 3);
+
+  // Bar chart data: impression share, FSC highlighted
+  const chartData = [
+    { domain: 'You (FSC)', value: num(me?.impression_share), isFsc: true },
+    ...byImprShare.map(r => ({
+      domain: r.domain.length > 22 ? r.domain.slice(0, 20) + '…' : r.domain,
+      fullDomain: r.domain,
+      value: num(r.impression_share),
+      isUpper: r.impression_share?.is_upper_bound,
+      isFsc: false,
+    })),
+  ];
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+
+      {/* Hero: FSC's standing */}
+      {me && (
+        <div style={{
+          padding: '14px 18px',
+          background: 'rgba(34,197,94,0.06)',
+          border: `1px solid rgba(34,197,94,0.25)`,
+          borderRadius: 10,
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', flexWrap: 'wrap', gap: 12,
+        }}>
+          <div>
+            <div style={{
+              fontSize: 10, color: C.green, textTransform: 'uppercase',
+              letterSpacing: 0.8, fontWeight: 600, marginBottom: 4,
+            }}>Your impression share</div>
+            <div style={{
+              fontSize: 28, fontWeight: 700, color: C.green,
+              fontFamily: monoStack, lineHeight: 1,
+            }}>
+              {num(me.impression_share).toFixed(1)}%
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>
+              Top of page rate · <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.top_of_page_rate)}</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>
+              Absolute top rate · <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.abs_top_of_page_rate)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Impression share comparison chart */}
+      <div style={{
+        background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: 14,
+      }}>
+        <div style={{
+          fontSize: 10, color: C.faint, textTransform: 'uppercase',
+          letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
+        }}>Impression share — you vs competitors</div>
+        <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 28)}>
+          <BarChart data={chartData} layout="vertical"
+            margin={{ top: 4, right: 40, left: 4, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" horizontal={false} />
+            <XAxis type="number" domain={[0, Math.max(40, num(me?.impression_share) + 5)]}
+              tick={{ fontSize: 10, fill: C.muted }}
+              tickFormatter={(v) => `${v}%`}
+              axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="domain" width={170}
+              tick={{ fontSize: 11, fill: C.text }}
+              axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={{
+              background: C.bg, border: `1px solid ${C.borderStrong}`,
+              borderRadius: 6, fontSize: 12, color: C.text,
+            }} cursor={{ fill: 'rgba(56,189,248,0.06)' }}
+              formatter={(v, _, item) => {
+                const r = item?.payload;
+                return [(r?.isUpper ? '<' : '') + Number(v).toFixed(2) + '%', 'Impression share'];
+              }}
+            />
+            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={entry.isFsc ? C.green : C.blue} fillOpacity={entry.isFsc ? 1 : 0.6} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Two-column: most direct + biggest threats */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 10,
+      }}>
+        {/* Most direct competitors */}
+        <div style={{
+          background: C.panel, border: `1px solid ${C.border}`,
+          borderRadius: 8, padding: 12,
+        }}>
+          <div style={{
+            fontSize: 10, color: C.blue, textTransform: 'uppercase',
+            letterSpacing: 0.8, fontWeight: 600, marginBottom: 4,
+          }}>Most direct competitors</div>
+          <div style={{ fontSize: 10, color: C.faint, marginBottom: 8, lineHeight: 1.4 }}>
+            Highest auction overlap with you
+          </div>
+          {mostDirect.map((c, i) => (
+            <div key={i} style={{
+              paddingTop: i === 0 ? 0 : 8, paddingBottom: 8,
+              borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+            }}>
+              <div style={{ fontSize: 12.5, color: C.text, marginBottom: 3, fontWeight: 500 }}>
+                {c.domain}
+              </div>
+              <div style={{
+                fontSize: 10.5, color: C.muted, fontFamily: monoStack,
+                display: 'flex', gap: 12, flexWrap: 'wrap',
+              }}>
+                <span>Overlap <span style={{ color: C.blue, fontWeight: 600 }}>{fmtPct(c.overlap_rate)}</span></span>
+                <span>Imp share {fmtPct(c.impression_share)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Biggest ranking threats */}
+        <div style={{
+          background: C.panel, border: `1px solid ${C.border}`,
+          borderRadius: 8, padding: 12,
+        }}>
+          <div style={{
+            fontSize: 10, color: C.red, textTransform: 'uppercase',
+            letterSpacing: 0.8, fontWeight: 600, marginBottom: 4,
+          }}>Biggest ranking threats</div>
+          <div style={{ fontSize: 10, color: C.faint, marginBottom: 8, lineHeight: 1.4 }}>
+            % of head-to-head auctions where they appear above you
+          </div>
+          {topThreats.map((c, i) => (
+            <div key={i} style={{
+              paddingTop: i === 0 ? 0 : 8, paddingBottom: 8,
+              borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+            }}>
+              <div style={{ fontSize: 12.5, color: C.text, marginBottom: 3, fontWeight: 500 }}>
+                {c.domain}
+              </div>
+              <div style={{
+                fontSize: 10.5, color: C.muted, fontFamily: monoStack,
+                display: 'flex', gap: 12, flexWrap: 'wrap',
+              }}>
+                <span>Beats you <span style={{ color: C.red, fontWeight: 600 }}>{fmtPct(c.position_above_rate)}</span></span>
+                <span>Overlap {fmtPct(c.overlap_rate)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Full table — collapsible-feeling small text */}
+      <details style={{
+        background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, overflow: 'hidden',
+      }}>
+        <summary style={{
+          padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
+          fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: 0.5,
+          textTransform: 'uppercase',
+        }}>
+          Full competitor table ({competitors.length})
+        </summary>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderTop: `1px solid ${C.border}` }}>
+                {['Domain', 'Imp share', 'Overlap', 'Pos above', 'Top of page', 'Abs top', 'Outrank'].map(h => (
+                  <th key={h} style={{
+                    padding: '7px 10px',
+                    textAlign: h === 'Domain' ? 'left' : 'right',
+                    color: C.faint, fontWeight: 600, fontSize: 10,
+                    textTransform: 'uppercase', letterSpacing: 0.5,
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[me, ...byImprShare].filter(Boolean).map((r, i) => (
+                <tr key={i} style={{
+                  borderTop: `1px solid ${C.border}`,
+                  background: r.domain === 'You' ? 'rgba(34,197,94,0.04)' : 'transparent',
+                }}>
+                  <td style={{
+                    padding: '6px 10px', color: r.domain === 'You' ? C.green : C.text,
+                    fontWeight: r.domain === 'You' ? 700 : 400,
+                  }}>{r.domain}</td>
+                  {['impression_share', 'overlap_rate', 'position_above_rate',
+                    'top_of_page_rate', 'abs_top_of_page_rate', 'outranking_share'].map(k => (
+                    <td key={k} style={{
+                      padding: '6px 10px', textAlign: 'right',
+                      fontFamily: monoStack, color: C.muted,
+                    }}>{fmtPct(r[k])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </div>
   );
 }
