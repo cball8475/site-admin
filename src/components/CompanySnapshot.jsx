@@ -239,6 +239,7 @@ export default function CompanySnapshot() {
   const [seo, setSeo] = useState(null);
   const [operators, setOperators] = useState(null);
   const [competitors, setCompetitors] = useState(null);
+  const [backlinks, setBacklinks] = useState(null);
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
@@ -260,6 +261,7 @@ export default function CompanySnapshot() {
       ['seo', `/seo/metrics?days=${days}`, setSeo],
       ['operators', '/prospects?operator_status=pilot_active', setOperators],
       ['competitors', '/competitors/auction-insights', setCompetitors],
+      ['backlinks', '/seo/backlinks', setBacklinks],
     ];
 
     await Promise.all(sources.map(async ([key, path, setter]) => {
@@ -466,6 +468,22 @@ export default function CompanySnapshot() {
           )
         ) : seo ? (
           <SeoPanel seo={seo} />
+        ) : null}
+      </Section>
+
+      {/* ── Backlinks ──────────────────────────────────────────────────── */}
+      <Section
+        title="Backlinks (off-page SEO)"
+        right={backlinks?.uploaded_at ? `Last updated ${fmtDate(backlinks.uploaded_at)}` : null}
+      >
+        {errors.backlinks ? (
+          errors.backlinks.includes('404') || errors.backlinks.includes('Not found') ? (
+            <PendingPanel message="Backlinks endpoint not yet deployed — deploy worker v2.11.3 to enable." />
+          ) : (
+            <ErrorBanner section="Backlinks" error={errors.backlinks} />
+          )
+        ) : backlinks ? (
+          <BacklinksPanel data={backlinks} />
         ) : null}
       </Section>
 
@@ -979,6 +997,145 @@ function CompetitorsPanel({ data }) {
   );
 }
 
+// ── Backlinks Panel ────────────────────────────────────────────────────────
+function BacklinksPanel({ data }) {
+  const links = data?.links || [];
+  const total = data?.total_referring_domains || links.length;
+  const editorialCount = data?.editorial_count ?? 0;
+  const breakdown = data?.type_breakdown || {};
+
+  // Health assessment based on count
+  // <5 = thin, 5-15 = developing, 15-50 = healthy, 50+ = strong
+  let healthLabel = '🔴 Thin';
+  let healthColor = C.red;
+  let healthMessage = 'Limited domain authority. Backlinks are a major SEO ranking factor — building 5–10 quality links over the next 90 days would meaningfully move position.';
+  if (total >= 50) {
+    healthLabel = '🟢 Strong';
+    healthColor = C.green;
+    healthMessage = 'Solid link profile. Continue adding editorial links to improve domain authority.';
+  } else if (total >= 15) {
+    healthLabel = '🟡 Developing';
+    healthColor = C.amber;
+    healthMessage = 'Growing profile. Focus on editorial links from local news, blogs, or industry publications.';
+  } else if (total >= 5) {
+    healthLabel = '🟡 Building';
+    healthColor = C.amber;
+    healthMessage = 'Foundation in place. Need editorial links — guest posts, local press mentions, partnerships.';
+  }
+
+  const typeColor = (type) => {
+    if (type === 'editorial') return C.green;
+    if (type === 'community') return C.blue;
+    return C.muted; // citation
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+
+      {/* Hero — referring domain count + health */}
+      <div style={{
+        padding: '14px 18px',
+        background: 'rgba(99,179,237,0.04)',
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        display: 'flex', justifyContent: 'space-between',
+        alignItems: 'flex-start', flexWrap: 'wrap', gap: 16,
+      }}>
+        <div>
+          <div style={{
+            fontSize: 10, color: C.muted, textTransform: 'uppercase',
+            letterSpacing: 0.8, fontWeight: 600, marginBottom: 4,
+          }}>Referring domains</div>
+          <div style={{
+            fontSize: 28, fontWeight: 700, color: healthColor,
+            fontFamily: monoStack, lineHeight: 1,
+          }}>
+            {total}
+          </div>
+          <div style={{
+            fontSize: 11, color: healthColor, fontWeight: 600,
+            marginTop: 6, letterSpacing: 0.3,
+          }}>{healthLabel}</div>
+        </div>
+        <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+          <div style={{
+            fontSize: 11, color: C.text, lineHeight: 1.5,
+          }}>{healthMessage}</div>
+          {/* Type breakdown */}
+          <div style={{
+            display: 'flex', gap: 14, marginTop: 10,
+            fontSize: 11, color: C.muted, fontFamily: monoStack,
+          }}>
+            <span>Editorial: <span style={{ color: editorialCount > 0 ? C.green : C.red, fontWeight: 600 }}>{editorialCount}</span></span>
+            <span>Citations: <span style={{ color: C.text, fontWeight: 600 }}>{breakdown.citation || 0}</span></span>
+            <span>Community: <span style={{ color: C.text, fontWeight: 600 }}>{breakdown.community || 0}</span></span>
+          </div>
+        </div>
+      </div>
+
+      {/* Linking pages list */}
+      <div style={{
+        background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, overflow: 'hidden',
+      }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 90px 80px',
+          gap: 8, padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
+          fontSize: 10, color: C.faint, textTransform: 'uppercase',
+          letterSpacing: 0.6, fontWeight: 600,
+        }}>
+          <div>Linking page</div>
+          <div style={{ textAlign: 'left' }}>Type</div>
+          <div style={{ textAlign: 'right' }}>Crawled</div>
+        </div>
+        {links.length === 0 ? (
+          <div style={{ padding: '14px', fontSize: 12, color: C.muted, textAlign: 'center' }}>
+            No backlinks recorded.
+          </div>
+        ) : links.map((l, i) => (
+          <div key={i} style={{
+            display: 'grid', gridTemplateColumns: '1fr 90px 80px',
+            gap: 8, padding: '8px 14px', fontSize: 12,
+            borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+            alignItems: 'center',
+          }}>
+            <div style={{
+              color: C.text, overflow: 'hidden', textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 11,
+            }}>
+              <a href={l.url} target="_blank" rel="noreferrer"
+                style={{ color: C.blue, textDecoration: 'none' }}>
+                {l.domain}
+              </a>
+            </div>
+            <div>
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+                background: `${typeColor(l.type)}18`, color: typeColor(l.type),
+                border: `1px solid ${typeColor(l.type)}55`, textTransform: 'capitalize',
+              }}>{l.type}</span>
+            </div>
+            <div style={{
+              textAlign: 'right', fontFamily: monoStack,
+              fontSize: 10.5, color: C.muted,
+            }}>{fmtDate(l.last_crawled)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Action note */}
+      <div style={{
+        padding: '8px 12px',
+        background: 'rgba(99,179,237,0.04)', border: `1px solid ${C.border}`,
+        borderRadius: 6, fontSize: 10.5, color: C.muted, lineHeight: 1.5,
+      }}>
+        <strong style={{ color: C.text }}>Update cadence:</strong> backlinks change slowly.
+        Re-export from GSC → Links → External monthly and upload to refresh.
+      </div>
+    </div>
+  );
+}
+
 // ── SEO Panel ──────────────────────────────────────────────────────────────
 function SeoPanel({ seo }) {
   const t = seo.current?.totals || {};
@@ -1131,18 +1288,92 @@ function SeoPanel({ seo }) {
         </div>
       )}
 
-      {queries.length > 0 && (
+      {/* Top Pages */}
+      {seo.top_pages && seo.top_pages.length > 0 && (
         <div style={{
           background: C.panel, border: `1px solid ${C.border}`,
-          borderRadius: 8, overflow: 'hidden',
+          borderRadius: 8, marginBottom: 12, overflow: 'hidden',
         }}>
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
-            gap: 8, padding: '8px 14px', borderBottom: `1px solid ${C.border}`,
+            gap: 8, padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
             fontSize: 10, color: C.faint, textTransform: 'uppercase',
             letterSpacing: 0.6, fontWeight: 600,
           }}>
-            <div>Top queries (full)</div>
+            <div>Top pages</div>
+            <div style={{ textAlign: 'right' }}>Clicks</div>
+            <div style={{ textAlign: 'right' }}>Impr</div>
+            <div style={{ textAlign: 'right' }}>CTR</div>
+            <div style={{ textAlign: 'right' }}>Pos</div>
+          </div>
+          {seo.top_pages.map((p, i) => {
+            // CTR optimization opportunity flag: high impressions + low CTR + decent position
+            const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+            const opportunity = p.impressions >= 50 && ctrNum < 1 && Number(p.position) <= 30;
+            return (
+              <div key={i} style={{
+                display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
+                gap: 8, padding: '7px 14px', fontSize: 12.5,
+                borderBottom: i < seo.top_pages.length - 1 ? `1px solid ${C.border}` : 'none',
+                alignItems: 'center',
+              }}>
+                <div style={{
+                  color: C.text, overflow: 'hidden', textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 11.5,
+                }}>
+                  {p.path}
+                  {opportunity && (
+                    <span title="High impressions, low CTR — title/meta optimization opportunity"
+                      style={{ marginLeft: 6, color: C.amber, fontSize: 11 }}>⚡</span>
+                  )}
+                </div>
+                <div style={{
+                  textAlign: 'right', fontFamily: monoStack,
+                  color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600,
+                }}>{p.clicks}</div>
+                <div style={{
+                  textAlign: 'right', fontFamily: monoStack, color: C.muted,
+                }}>{p.impressions}</div>
+                <div style={{
+                  textAlign: 'right', fontFamily: monoStack,
+                  color: opportunity ? C.amber : C.muted, fontWeight: opportunity ? 600 : 400,
+                }}>{p.ctr}</div>
+                <div style={{
+                  textAlign: 'right', fontFamily: monoStack,
+                  color: Number(p.position) <= 10 ? C.green : Number(p.position) <= 30 ? C.amber : C.muted,
+                  fontWeight: 600,
+                }}>{p.position}</div>
+              </div>
+            );
+          })}
+          <div style={{
+            padding: '6px 14px', fontSize: 10, color: C.faint,
+            background: 'rgba(99,179,237,0.03)', borderTop: `1px solid ${C.border}`,
+          }}>
+            <span style={{ color: C.amber }}>⚡</span> = CTR optimization opportunity (high impressions, low CTR, decent position)
+          </div>
+        </div>
+      )}
+
+      {queries.length > 0 && (
+        <details style={{
+          background: C.panel, border: `1px solid ${C.border}`,
+          borderRadius: 8, overflow: 'hidden',
+        }}>
+          <summary style={{
+            padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
+            fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: 0.5,
+            textTransform: 'uppercase',
+          }}>
+            All top queries ({queries.length})
+          </summary>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
+            gap: 8, padding: '8px 14px', borderTop: `1px solid ${C.border}`,
+            fontSize: 10, color: C.faint, textTransform: 'uppercase',
+            letterSpacing: 0.6, fontWeight: 600,
+          }}>
+            <div>Query</div>
             <div style={{ textAlign: 'right' }}>Clicks</div>
             <div style={{ textAlign: 'right' }}>Impr</div>
             <div style={{ textAlign: 'right' }}>CTR</div>
@@ -1152,7 +1383,7 @@ function SeoPanel({ seo }) {
             <div key={i} style={{
               display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
               gap: 8, padding: '7px 14px', fontSize: 12.5,
-              borderBottom: i < queries.length - 1 ? `1px solid ${C.border}` : 'none',
+              borderTop: `1px solid ${C.border}`,
               alignItems: 'center',
             }}>
               <div style={{
@@ -1176,7 +1407,7 @@ function SeoPanel({ seo }) {
               }}>{q.position}</div>
             </div>
           ))}
-        </div>
+        </details>
       )}
 
       {/* Competitor data note */}
