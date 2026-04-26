@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
+  ComposedChart, Line, Legend,
 } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_CRM_API_URL || '';
@@ -648,29 +649,36 @@ function AdsPanel({ ads }) {
           <div style={{
             fontSize: 10, color: C.faint, textTransform: 'uppercase',
             letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
-          }}>Daily Clicks</div>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={daily} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          }}>Daily Clicks vs Spend</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <ComposedChart data={daily} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.08)" />
               <XAxis
                 dataKey="label" tick={{ fontSize: 10, fill: C.muted }}
                 axisLine={{ stroke: C.border }} tickLine={false}
               />
-              <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: C.muted }}
-                axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" allowDecimals={false}
+                tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right"
+                tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false}
+                tickFormatter={(v) => `$${v}`} />
               <Tooltip
                 contentStyle={{
                   background: C.bg, border: `1px solid ${C.borderStrong}`,
                   borderRadius: 6, fontSize: 12, color: C.text,
                 }}
                 cursor={{ fill: 'rgba(56,189,248,0.06)' }}
+                formatter={(value, name) => name === 'Spend' ? [`$${Number(value).toFixed(2)}`, name] : [value, name]}
               />
-              <Bar dataKey="clicks" radius={[3, 3, 0, 0]}>
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="rect" />
+              <Bar yAxisId="left" dataKey="clicks" name="Clicks" radius={[3, 3, 0, 0]}>
                 {daily.map((entry, i) => (
                   <Cell key={i} fill={entry.clicks > 0 ? C.blue : 'rgba(56,189,248,0.2)'} />
                 ))}
               </Bar>
-            </BarChart>
+              <Line yAxisId="right" type="monotone" dataKey="spend" name="Spend"
+                stroke={C.purple} strokeWidth={2} dot={{ r: 3, fill: C.purple }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -712,6 +720,12 @@ function SeoPanel({ seo }) {
   const p = seo.previous?.totals || {};
   const queries = seo.top_queries || [];
 
+  // Daily series for charting
+  const daily = (seo.daily || []).map(d => ({
+    ...d,
+    label: d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+  }));
+
   // Status calcs
   const ctrNum = parseFloat(String(t.ctr ?? '').replace('%', ''));
   const posNum = parseFloat(t.position);
@@ -727,6 +741,19 @@ function SeoPanel({ seo }) {
     ? -1 * Math.round(((posNum - Number(p.position)) / Number(p.position)) * 100)
     : null;
 
+  // ── Competitive Insights (inferred from GSC) ──
+  // Queries we're winning: page 1 (≤10) sorted by impressions desc
+  const winning = queries
+    .filter(q => Number(q.position) <= 10 && q.impressions >= 5)
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 3);
+
+  // Biggest opportunities: page 2+ with meaningful impressions — competitors are winning these
+  const opportunities = queries
+    .filter(q => Number(q.position) > 10 && q.impressions >= 10)
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 3);
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -735,6 +762,109 @@ function SeoPanel({ seo }) {
         <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
         <MiniStat label="Avg Position" value={t.position || '—'} delta={posDelta} status={status.position} />
       </div>
+
+      {/* Daily trend chart */}
+      {daily.length > 0 && (
+        <div style={{
+          background: C.panel, border: `1px solid ${C.border}`,
+          borderRadius: 8, padding: 12, marginBottom: 12,
+        }}>
+          <div style={{
+            fontSize: 10, color: C.faint, textTransform: 'uppercase',
+            letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
+          }}>Daily Search Performance</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <ComposedChart data={daily} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.08)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.muted }}
+                axisLine={{ stroke: C.border }} tickLine={false} />
+              <YAxis yAxisId="left" allowDecimals={false}
+                tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right"
+                tick={{ fontSize: 10, fill: C.muted }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{
+                background: C.bg, border: `1px solid ${C.borderStrong}`,
+                borderRadius: 6, fontSize: 12, color: C.text,
+              }} cursor={{ stroke: 'rgba(56,189,248,0.2)' }} />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="rect" />
+              <Line yAxisId="left" type="monotone" dataKey="clicks" name="Clicks"
+                stroke={C.blue} strokeWidth={2} dot={{ r: 3, fill: C.blue }} />
+              <Line yAxisId="right" type="monotone" dataKey="impressions" name="Impressions"
+                stroke={C.purple} strokeWidth={2} dot={{ r: 2, fill: C.purple }}
+                strokeDasharray="0" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Competitive Insights — Winning vs Opportunities */}
+      {(winning.length > 0 || opportunities.length > 0) && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 10, marginBottom: 12,
+        }}>
+          {/* Winning queries */}
+          <div style={{
+            background: C.panel, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: 12,
+          }}>
+            <div style={{
+              fontSize: 10, color: C.green, textTransform: 'uppercase',
+              letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
+            }}>🟢 Where you're winning</div>
+            {winning.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.muted }}>No page-1 rankings yet.</div>
+            ) : winning.map((q, i) => (
+              <div key={i} style={{
+                paddingTop: i === 0 ? 0 : 6, paddingBottom: 6,
+                borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+              }}>
+                <div style={{ fontSize: 12.5, color: C.text, marginBottom: 2 }}>{q.query}</div>
+                <div style={{
+                  fontSize: 10.5, color: C.muted, fontFamily: monoStack,
+                  display: 'flex', gap: 12,
+                }}>
+                  <span>Pos <span style={{ color: C.green, fontWeight: 600 }}>{q.position}</span></span>
+                  <span>{fmtNum(q.impressions)} impr</span>
+                  <span>{q.clicks} clicks</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Biggest opportunities (where competitors are winning) */}
+          <div style={{
+            background: C.panel, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: 12,
+          }}>
+            <div style={{
+              fontSize: 10, color: C.amber, textTransform: 'uppercase',
+              letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
+            }}>🟡 Biggest opportunities</div>
+            <div style={{ fontSize: 10, color: C.faint, marginBottom: 8, lineHeight: 1.4 }}>
+              High-demand queries where competitors rank above you
+            </div>
+            {opportunities.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.muted }}>None — all top queries are page 1.</div>
+            ) : opportunities.map((q, i) => (
+              <div key={i} style={{
+                paddingTop: i === 0 ? 0 : 6, paddingBottom: 6,
+                borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+              }}>
+                <div style={{ fontSize: 12.5, color: C.text, marginBottom: 2 }}>{q.query}</div>
+                <div style={{
+                  fontSize: 10.5, color: C.muted, fontFamily: monoStack,
+                  display: 'flex', gap: 12,
+                }}>
+                  <span>Pos <span style={{ color: C.amber, fontWeight: 600 }}>{q.position}</span></span>
+                  <span>{fmtNum(q.impressions)} impr</span>
+                  <span>{q.clicks} clicks</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {queries.length > 0 && (
         <div style={{
@@ -747,7 +877,7 @@ function SeoPanel({ seo }) {
             fontSize: 10, color: C.faint, textTransform: 'uppercase',
             letterSpacing: 0.6, fontWeight: 600,
           }}>
-            <div>Query</div>
+            <div>Top queries (full)</div>
             <div style={{ textAlign: 'right' }}>Clicks</div>
             <div style={{ textAlign: 'right' }}>Impr</div>
             <div style={{ textAlign: 'right' }}>CTR</div>
@@ -783,6 +913,18 @@ function SeoPanel({ seo }) {
           ))}
         </div>
       )}
+
+      {/* Competitor data note */}
+      <div style={{
+        marginTop: 10, padding: '8px 12px',
+        background: 'rgba(99,179,237,0.04)', border: `1px solid ${C.border}`,
+        borderRadius: 6, fontSize: 10.5, color: C.muted, lineHeight: 1.5,
+      }}>
+        <strong style={{ color: C.text }}>Competitor names</strong> require SerpAPI/ValueSERP
+        (~$25/mo) or weekly Google Ads Auction Insights export. Above is inferred from your
+        own GSC visibility — high-impression queries where you're page 2+ are where
+        competitors are winning the click.
+      </div>
     </div>
   );
 }
