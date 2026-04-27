@@ -757,6 +757,89 @@ function AdsPanel({ ads }) {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Spend vs Clicks summary — efficiency + trend read */}
+      {(() => {
+        const spend = Number(t.spend) || 0;
+        const clicks = Number(t.clicks) || 0;
+        const prevSpend = Number(p.spend) || 0;
+        const prevClicks = Number(p.clicks) || 0;
+        const conv = Number(t.conversions) || 0;
+        const cpc = clicks > 0 ? spend / clicks : 0;
+        const prevCpc = prevClicks > 0 ? prevSpend / prevClicks : 0;
+        const costPerConv = conv > 0 ? spend / conv : null;
+
+        // Need at least some spend data to show anything useful
+        if (spend === 0 && prevSpend === 0) return null;
+
+        let tone, headline, action;
+
+        // Evaluate efficiency: CPC trend + conversion cost
+        const cpcImproved = prevCpc > 0 && cpc < prevCpc * 0.9;
+        const cpcWorsened = prevCpc > 0 && cpc > prevCpc * 1.15;
+        const clicksUp = prevClicks > 0 && clicks > prevClicks * 1.1;
+        const clicksDown = prevClicks > 0 && clicks < prevClicks * 0.85;
+        const hasConversions = conv >= 1;
+
+        if (hasConversions && cpc <= 4 && !cpcWorsened) {
+          tone = 'positive';
+          headline = (
+            <>
+              Spend is converting. <strong>{conv} conversion{conv > 1 ? 's' : ''}</strong> at{' '}
+              <strong>${costPerConv.toFixed(0)}</strong>/conversion, CPC at{' '}
+              <strong>${cpc.toFixed(2)}</strong>.
+              {clicksUp && <> Click volume trending up vs. prior period.</>}
+            </>
+          );
+        } else if (spend > 0 && clicks > 0 && !hasConversions && cpc <= 5) {
+          tone = 'attention';
+          headline = (
+            <>
+              Getting clicks (<strong>{clicks}</strong>) at a reasonable CPC (
+              <strong>${cpc.toFixed(2)}</strong>) but{' '}
+              <strong>zero conversions</strong> this period.
+              {cpcImproved && <> CPC is down vs. prior period — efficiency improving.</>}
+            </>
+          );
+          action = 'Traffic quality or landing page is the bottleneck. Review search terms for irrelevant queries and check that the CTA + phone number load correctly on mobile.';
+        } else if (cpcWorsened || cpc > 5) {
+          tone = 'attention';
+          headline = (
+            <>
+              CPC at <strong>${cpc.toFixed(2)}</strong>
+              {prevCpc > 0 && <> (was ${prevCpc.toFixed(2)} prior period)</>}
+              .{' '}
+              {clicksDown
+                ? <>Click volume is also down — competition may be tightening.</>
+                : <>Click volume holding steady but cost per click is climbing.</>}
+            </>
+          );
+          action = 'Review auction insights for new competitors. Consider tightening geo targeting or adding negative keywords to reduce wasted spend.';
+        } else if (clicks === 0 && spend > 0) {
+          tone = 'critical';
+          headline = (
+            <>
+              Spent <strong>${spend.toFixed(2)}</strong> with <strong>zero clicks</strong>.
+              Impressions are serving but nobody is clicking through.
+            </>
+          );
+          action = 'Ad copy or targeting mismatch. Review ad headlines/descriptions against the search terms triggering impressions.';
+        } else {
+          // Neutral fallback
+          tone = 'neutral';
+          headline = (
+            <>
+              <strong>${spend.toFixed(2)}</strong> spent, <strong>{clicks}</strong> clicks
+              {cpc > 0 && <> at <strong>${cpc.toFixed(2)}</strong>/click</>}
+              {hasConversions && <>, <strong>{conv}</strong> conversion{conv > 1 ? 's' : ''}</>}.
+              {prevSpend > 0 && clicksUp && <> Volume trending up from prior period.</>}
+              {prevSpend > 0 && clicksDown && <> Volume down from prior period.</>}
+            </>
+          );
+        }
+
+        return <InsightSummary tone={tone} headline={headline} action={action} />;
+      })()}
     </div>
   );
 }
@@ -1316,6 +1399,32 @@ function SeoPanel({ seo }) {
     .sort((a, b) => b.impressions - a.impressions)
     .slice(0, 3);
 
+  // ── Tracked Keywords — city expansion push ──
+  const TRACKED_KEYWORDS = [
+    { label: 'Florence', patterns: ['dumpster rental florence', 'rent a dumpster florence', 'dumpster florence sc'] },
+    { label: 'Darlington', patterns: ['rent a dumpster darlington', 'dumpster rental darlington', 'dumpster darlington sc'] },
+    { label: 'Hartsville', patterns: ['rent a dumpster hartsville', 'dumpster rental hartsville', 'dumpster hartsville sc'] },
+  ];
+
+  const trackedResults = TRACKED_KEYWORDS.map(tk => {
+    // Find the best-matching query from GSC data for each tracked keyword group
+    const matches = queries.filter(q =>
+      tk.patterns.some(p => (q.query || '').toLowerCase().includes(p))
+    );
+    if (matches.length === 0) return { ...tk, found: false };
+    // Pick the one with most impressions as the primary
+    const best = matches.sort((a, b) => b.impressions - a.impressions)[0];
+    return {
+      ...tk,
+      found: true,
+      query: best.query,
+      position: Number(best.position),
+      clicks: best.clicks,
+      impressions: best.impressions,
+      ctr: best.ctr,
+    };
+  });
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -1323,6 +1432,71 @@ function SeoPanel({ seo }) {
         <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} status={status.impressions} />
         <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
         <MiniStat label="Avg Position" value={t.position || '—'} delta={posDelta} status={status.position} />
+      </div>
+
+      {/* Keyword Rank Tracker — city expansion */}
+      <div style={{
+        background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: 12, marginBottom: 12,
+      }}>
+        <div style={{
+          fontSize: 10, color: C.faint, textTransform: 'uppercase',
+          letterSpacing: 0.8, fontWeight: 600, marginBottom: 10,
+        }}>Keyword Rank Tracker — City Push</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+          {trackedResults.map((tk, i) => {
+            const posColor = !tk.found ? C.muted
+              : tk.position <= 10 ? C.green
+              : tk.position <= 20 ? '#22d3ee'
+              : tk.position <= 30 ? C.amber
+              : C.red;
+            const pageNum = tk.found ? Math.ceil(tk.position / 10) : null;
+            return (
+              <div key={i} style={{
+                padding: '10px 12px',
+                background: C.bg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+                  background: posColor,
+                }} />
+                <div style={{
+                  fontSize: 11.5, fontWeight: 600, color: C.text, marginBottom: 4,
+                }}>{tk.label}</div>
+                {tk.found ? (
+                  <>
+                    <div style={{
+                      fontSize: 10.5, color: C.muted, marginBottom: 6,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>"{tk.query}"</div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                      <span style={{
+                        fontSize: 20, fontWeight: 700, color: posColor,
+                        fontFamily: monoStack,
+                      }}>{tk.position.toFixed(1)}</span>
+                      <span style={{ fontSize: 10, color: C.muted }}>page {pageNum}</span>
+                    </div>
+                    <div style={{
+                      marginTop: 6, fontSize: 10, color: C.muted,
+                      fontFamily: monoStack, display: 'flex', gap: 10,
+                    }}>
+                      <span>{tk.clicks} click{tk.clicks !== 1 ? 's' : ''}</span>
+                      <span>{fmtNum(tk.impressions)} impr</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 4 }}>
+                    Not yet indexed — no GSC data
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Daily trend chart */}
@@ -1615,6 +1789,32 @@ function SeoPanel({ seo }) {
               Optimize title/meta on <strong>{ctrOpp.path}</strong> ({fmtNum(ctrOpp.impressions)} impressions, {ctrOpp.ctr} CTR — better headline → more clicks at zero ranking cost).
             </span>
           );
+        }
+        // City expansion callout
+        const darlington = trackedResults.find(tk => tk.label === 'Darlington');
+        const hartsville = trackedResults.find(tk => tk.label === 'Hartsville');
+        const cityNotes = [];
+        if (darlington && !darlington.found) cityNotes.push('Darlington');
+        if (hartsville && !hartsville.found) cityNotes.push('Hartsville');
+        if (cityNotes.length > 0) {
+          actions.push(
+            <span key="cities">
+              <strong>{cityNotes.join(' and ')}</strong> not yet showing in GSC — publish dedicated landing pages or blog content targeting these cities to get indexed.
+            </span>
+          );
+        } else {
+          // Both found — report progress
+          const cityProgress = [darlington, hartsville].filter(tk => tk && tk.found);
+          if (cityProgress.length > 0) {
+            const parts = cityProgress.map(tk =>
+              `${tk.label} at pos ${tk.position.toFixed(1)} (page ${Math.ceil(tk.position / 10)})`
+            );
+            actions.push(
+              <span key="cities">
+                City expansion: <strong>{parts.join(', ')}</strong> — {cityProgress.some(tk => tk.position <= 20) ? 'gaining traction' : 'still building visibility'}.
+              </span>
+            );
+          }
         }
         action = actions.length === 0 ? null : (
           <span>
