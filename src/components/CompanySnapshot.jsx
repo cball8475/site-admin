@@ -1401,9 +1401,9 @@ function SeoPanel({ seo }) {
 
   // ── Tracked Keywords — city expansion push ──
   const TRACKED_KEYWORDS = [
-    { label: 'Florence', patterns: ['dumpster rental florence', 'rent a dumpster florence', 'dumpster florence sc'] },
-    { label: 'Darlington', patterns: ['rent a dumpster darlington', 'dumpster rental darlington', 'dumpster darlington sc'] },
-    { label: 'Hartsville', patterns: ['rent a dumpster hartsville', 'dumpster rental hartsville', 'dumpster hartsville sc'] },
+    { label: 'Florence', patterns: ['dumpster rental florence', 'rent a dumpster florence', 'dumpster for rent florence', 'renting a dumpster florence', 'dumpster florence sc'] },
+    { label: 'Darlington', patterns: ['dumpster rental darlington', 'rent a dumpster darlington', 'dumpster for rent darlington', 'renting a dumpster darlington', 'rental dumpster darlington', 'dumpster darlington sc'] },
+    { label: 'Hartsville', patterns: ['dumpster rental hartsville', 'rent a dumpster hartsville', 'dumpster for rent hartsville', 'renting a dumpster hartsville', 'rental dumpster hartsville', 'dumpster hartsville sc'] },
   ];
 
   const trackedResults = TRACKED_KEYWORDS.map(tk => {
