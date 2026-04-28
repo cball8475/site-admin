@@ -86,7 +86,10 @@ function deltaPct(current, previous) {
 }
 
 async function fetchJson(path, init = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  // Cache-bust: append timestamp so browser never serves stale data across time-window switches
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${API_BASE}${path}${sep}_t=${Date.now()}`;
+  const res = await fetch(url, {
     ...init,
     headers: {
       'Authorization': `Bearer ${API_TOKEN}`,
