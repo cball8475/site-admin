@@ -192,7 +192,7 @@ function PendingPanel({ message }) {
 }
 
 // Bottom-of-section interpretation block. tone: 'positive' | 'neutral' | 'attention' | 'critical'
-function InsightSummary({ tone = 'neutral', headline, action }) {
+function InsightSummary({ tone = 'neutral', headline, action, actions = [], onComplete, onDismiss }) {
   const accents = {
     positive:  { bar: C.green,  bg: 'rgba(34,197,94,0.05)',  label: 'Healthy' },
     neutral:   { bar: C.blue,   bg: 'rgba(56,189,248,0.04)', label: 'Snapshot' },
@@ -200,6 +200,11 @@ function InsightSummary({ tone = 'neutral', headline, action }) {
     critical:  { bar: C.red,    bg: 'rgba(239,68,68,0.05)',  label: 'Action needed' },
   };
   const a = accents[tone] || accents.neutral;
+  // Merge legacy single-action prop into actions array
+  const allActions = [...actions];
+  if (action && !allActions.find(a => a.text === action)) {
+    allActions.push({ text: action, id: null, section: 'legacy' });
+  }
   return (
     <div style={{
       marginTop: 12,
@@ -218,12 +223,30 @@ function InsightSummary({ tone = 'neutral', headline, action }) {
       <div style={{ fontSize: 12.5, color: C.text, lineHeight: 1.55 }}>
         {headline}
       </div>
-      {action && (
+      {allActions.length > 0 && (
         <div style={{
           marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}`,
-          fontSize: 12, color: C.text, lineHeight: 1.5,
         }}>
-          <strong style={{ color: a.bar }}>→ Action:</strong> {action}
+          {allActions.map((act, i) => (
+            <div key={act.id || i} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: i < allActions.length - 1 ? 6 : 0,
+            }}>
+              {onComplete && act.id ? (
+                <input type="checkbox" style={{ marginTop: 3, cursor: 'pointer', accentColor: a.bar }}
+                  onChange={() => onComplete(act.id)} title="Mark completed" />
+              ) : (
+                <span style={{ color: a.bar, fontWeight: 700, fontSize: 12, marginTop: 1 }}>→</span>
+              )}
+              <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5, flex: 1 }}>{act.text}</span>
+              {onDismiss && act.id && (
+                <button onClick={() => onDismiss(act.id)} title="Dismiss"
+                  style={{
+                    background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
+                    fontSize: 10, padding: '2px 4px', flexShrink: 0, opacity: 0.5,
+                  }}>✕</button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -281,6 +304,8 @@ export default function CompanySnapshot() {
   const [backlinks, setBacklinks] = useState(null);
   const [searchTerms, setSearchTerms] = useState(null);
 
+  const [actionItems, setActionItems] = useState([]);
+
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
 
@@ -317,6 +342,43 @@ export default function CompanySnapshot() {
 
     setErrors(errs);
     setLoading(false);
+  }
+
+  // ─── Action Items (corrective action tracking) ────────────────────────────
+  useEffect(() => { fetchActions(); }, []);
+
+  async function fetchActions() {
+    try {
+      const data = await fetchJson('/actions?status=open');
+      setActionItems(data.actions || []);
+    } catch { /* non-critical */ }
+  }
+
+  async function completeAction(id) {
+    try {
+      await fetchJson(`/actions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed' }) });
+      setActionItems(prev => prev.filter(a => a.id !== id));
+    } catch { /* silent */ }
+  }
+
+  async function dismissAction(id) {
+    try {
+      await fetchJson(`/actions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'dismissed' }) });
+      setActionItems(prev => prev.filter(a => a.id !== id));
+    } catch { /* silent */ }
+  }
+
+  async function syncAction(section, text) {
+    try {
+      const res = await fetchJson('/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section, action_text: text }) });
+      if (!res.deduplicated && res.action_id) {
+        setActionItems(prev => [...prev, { id: res.action_id, section, action_text: text, status: 'open' }]);
+      }
+    } catch { /* silent */ }
+  }
+
+  function actionsFor(section) {
+    return actionItems.filter(a => a.section === section).map(a => ({ id: a.id, text: a.action_text }));
   }
 
   // ─── Initial loading state ──────────────────────────────────────────────
@@ -492,7 +554,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="Search Terms" error={errors.searchTerms} />
           )
         ) : searchTerms ? (
-          <SearchTermsPanel data={searchTerms} />
+          <SearchTermsPanel data={searchTerms} actions={actionsFor("search_terms")} onComplete={completeAction} onDismiss={dismissAction} />
         ) : null}
       </Section>
 
@@ -698,12 +760,43 @@ const NEG_CANDIDATES = [
   'dumper trash',
 ];
 
-function SearchTermsPanel({ data }) {
+function SearchTermsPanel({ data, actions = [], onComplete, onDismiss }) {
   const terms = data.search_terms || [];
   const totals = data.search_term_totals || {};
+  const top10 = terms.slice(0, 10);
   const negHits = terms.filter(t =>
     NEG_CANDIDATES.some(n => t.search_term.includes(n)) && t.clicks === 0
   );
+  const maxImpr = Math.max(...top10.map(t => t.impressions), 1);
+
+  // Insight generation
+  const topConverter = terms.find(t => t.conversions > 0);
+  const broadTerms = terms.filter(t => t.status !== 'ADDED');
+  const broadClicks = broadTerms.reduce((s, t) => s + t.clicks, 0);
+  const totalClicks = totals.total_clicks || 0;
+  const broadPct = totalClicks > 0 ? Math.round((broadClicks / totalClicks) * 100) : 0;
+
+  let tone = 'neutral', headline;
+  if (topConverter) {
+    tone = 'positive';
+    headline = (<>
+      <strong>{totals.unique_terms}</strong> terms triggered ads.
+      Top converter: "<strong>{topConverter.search_term}</strong>" ({topConverter.ctr} CTR, {topConverter.conversions} conv).
+      {negHits.length > 0 && <> {negHits.length} terms flagged as potential negatives.</>}
+      {broadPct > 60 && <> {broadPct}% of clicks from broad match — review for quality.</>}
+    </>);
+  } else if (totalClicks >= 5) {
+    tone = 'attention';
+    headline = (<>
+      <strong>{totalClicks}</strong> clicks across <strong>{totals.unique_terms}</strong> terms but <strong>zero conversions</strong>.
+      {negHits.length > 0 && <> {negHits.length} irrelevant terms wasting impressions.</>}
+    </>);
+  } else {
+    headline = (<>
+      <strong>{totals.unique_terms}</strong> terms, <strong>{totalClicks}</strong> clicks, ${(totals.total_spend || 0).toFixed(0)} spend.
+      {negHits.length > 0 && <> {negHits.length} terms flagged.</>}
+    </>);
+  }
 
   return (
     <div>
@@ -711,72 +804,77 @@ function SearchTermsPanel({ data }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <MiniStat label="Unique Terms" value={totals.unique_terms || 0} />
         <MiniStat label="Total Clicks" value={totals.total_clicks || 0} />
-        <MiniStat label="Total Impr" value={totals.total_impressions || 0} />
+        <MiniStat label="Total Impr" value={fmtNum(totals.total_impressions || 0)} />
         <MiniStat label="Total Spend" value={fmtMoneyDecimal(totals.total_spend || 0)} />
       </div>
 
-      {/* Negative suggestions */}
-      {negHits.length > 0 && (
+      {/* Horizontal bar chart — top 10 */}
+      <div style={{
+        background: C.panel, border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: 12, marginBottom: 12,
+      }}>
         <div style={{
-          padding: '8px 12px', marginBottom: 12, borderRadius: 6,
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
-          fontSize: 12, color: C.amber, fontWeight: 500,
-        }}>
-          ⚠ <strong>Potential negatives ({negHits.length}):</strong>{' '}
-          {negHits.map(t => `"${t.search_term}"`).join(', ')}
-        </div>
-      )}
-
-      {/* Search terms table */}
-      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 70px 50px 50px 55px 60px 60px',
-          gap: 4, padding: '8px 12px', borderBottom: `1px solid ${C.border}`,
-          fontSize: 10, color: C.faint, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600,
-        }}>
-          <div>Search Term</div>
-          <div>Status</div>
-          <div style={{ textAlign: 'right' }}>Clicks</div>
-          <div style={{ textAlign: 'right' }}>Impr</div>
-          <div style={{ textAlign: 'right' }}>CTR</div>
-          <div style={{ textAlign: 'right' }}>CPC</div>
-          <div style={{ textAlign: 'right' }}>Spend</div>
-        </div>
-        {terms.slice(0, 30).map((t, i) => {
+          fontSize: 10, color: C.faint, textTransform: 'uppercase',
+          letterSpacing: 0.8, fontWeight: 600, marginBottom: 10,
+        }}>Top 10 Search Terms by Impressions</div>
+        {top10.map((t, i) => {
           const isNeg = NEG_CANDIDATES.some(n => t.search_term.includes(n));
+          const barWidth = Math.max(2, (t.impressions / maxImpr) * 100);
+          const clickWidth = t.clicks > 0 ? Math.max(2, (t.clicks / maxImpr) * 100) : 0;
+          const pillLabel = t.status === 'ADDED' ? 'ADDED' : isNeg ? 'FLAG' : '';
           const pillColor = t.status === 'ADDED' ? C.blue : isNeg ? C.red : C.muted;
-          const pillLabel = t.status === 'ADDED' ? 'ADDED' : isNeg ? 'FLAG' : 'BROAD';
           return (
-            <div key={i} style={{
-              display: 'grid', gridTemplateColumns: '1fr 70px 50px 50px 55px 60px 60px',
-              gap: 4, padding: '6px 12px', fontSize: 12, borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
-              alignItems: 'center', opacity: isNeg ? 0.5 : 1,
-            }}>
-              <div style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 11 }}>
-                {t.search_term}
-              </div>
-              <div>
-                <span style={{
-                  fontSize: 9.5, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
-                  background: `${pillColor}18`, color: pillColor, border: `1px solid ${pillColor}40`,
-                }}>
-                  {pillLabel}
+            <div key={i} style={{ marginBottom: 6, opacity: isNeg ? 0.5 : 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                <span style={{ fontSize: 11, color: C.text, fontFamily: monoStack, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                  {t.search_term}
+                </span>
+                <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, display: 'flex', gap: 8, flexShrink: 0 }}>
+                  {pillLabel && <span style={{ fontSize: 9, fontWeight: 600, color: pillColor }}>{pillLabel}</span>}
+                  <span>{t.clicks}cl</span>
+                  <span>{t.impressions}imp</span>
+                  <span>{t.ctr}</span>
                 </span>
               </div>
-              <div style={{ textAlign: 'right', fontFamily: monoStack, color: t.clicks > 0 ? C.text : C.muted }}>{t.clicks}</div>
-              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.impressions}</div>
-              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.ctr}</div>
-              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.avg_cpc}</div>
-              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>${t.spend.toFixed(2)}</div>
+              <div style={{ height: 6, background: 'rgba(99,179,237,0.08)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                <div style={{ position: 'absolute', height: '100%', width: `${barWidth}%`, background: 'rgba(99,179,237,0.2)', borderRadius: 3 }} />
+                {clickWidth > 0 && <div style={{ position: 'absolute', height: '100%', width: `${clickWidth}%`, background: C.blue, borderRadius: 3 }} />}
+              </div>
             </div>
           );
         })}
-        {terms.length > 30 && (
-          <div style={{ padding: '8px 12px', fontSize: 11, color: C.faint, textAlign: 'center', borderTop: `1px solid ${C.border}` }}>
-            + {terms.length - 30} more terms (showing top 30 by impressions)
-          </div>
-        )}
       </div>
+
+      {/* Collapsible full table */}
+      <details style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
+        <summary style={{ padding: '10px 14px', cursor: 'pointer', userSelect: 'none', fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          Full search terms table ({terms.length})
+        </summary>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr style={{ borderTop: `1px solid ${C.border}` }}>
+              {['Term','Status','Clicks','Impr','CTR','CPC','Spend'].map(h =>
+                <th key={h} style={{ padding:'7px 10px', textAlign: h==='Term'?'left':'right', color:C.faint, fontWeight:600, fontSize:10, textTransform:'uppercase', letterSpacing:0.5 }}>{h}</th>
+              )}
+            </tr></thead>
+            <tbody>{terms.map((t, i) => {
+              const isNeg = NEG_CANDIDATES.some(n => t.search_term.includes(n));
+              return (<tr key={i} style={{ borderTop:`1px solid ${C.border}`, opacity: isNeg?0.5:1 }}>
+                <td style={{ padding:'6px 10px', color:C.text, fontFamily:monoStack, fontSize:11 }}>{t.search_term}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontSize:9, fontWeight:600, color: t.status==='ADDED'?C.blue:isNeg?C.red:C.muted }}>{t.status==='ADDED'?'ADDED':isNeg?'FLAG':'BROAD'}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:monoStack, color:C.muted }}>{t.clicks}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:monoStack, color:C.muted }}>{t.impressions}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:monoStack, color:C.muted }}>{t.ctr}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:monoStack, color:C.muted }}>{t.avg_cpc}</td>
+                <td style={{ padding:'6px 10px', textAlign:'right', fontFamily:monoStack, color:C.muted }}>${t.spend.toFixed(2)}</td>
+              </tr>);
+            })}</tbody>
+          </table>
+        </div>
+      </details>
+
+      {/* Insight + action items */}
+      <InsightSummary tone={tone} headline={headline} actions={actions} onComplete={onComplete} onDismiss={onDismiss} />
     </div>
   );
 }
