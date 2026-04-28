@@ -324,7 +324,7 @@ export default function CompanySnapshot() {
       ['leadsAnalytics', `/leads/analytics?days=${days}`, setLeadsAnalytics],
       ['ads', `/ads/metrics?days=${days}`, setAds],
       ['seo', `/seo/metrics?days=${days}`, setSeo],
-      ['operators', '/prospects?operator_status=pilot_active', setOperators],
+      ['operators', '/prospects', (d) => { const ops = (d.prospects || []).filter(p => p.operator_status === 'pilot_active' || p.operator_status === 'active'); setOperators({ prospects: ops }); }, setOperators],
       ['competitors', '/competitors/auction-insights', setCompetitors],
       ['backlinks', '/seo/backlinks', setBacklinks],
       ['searchTerms', `/ads/search-terms?days=${days}`, setSearchTerms],
@@ -1809,72 +1809,77 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
         </div>
       )}
 
-      {/* Top Pages */}
-      {seo.top_pages && seo.top_pages.length > 0 && (
-        <div style={{
-          background: C.panel, border: `1px solid ${C.border}`,
-          borderRadius: 8, marginBottom: 12, overflow: 'hidden',
-        }}>
+      {/* Top Pages — ranked list (top 5) + collapsible full table */}
+      {seo.top_pages && seo.top_pages.length > 0 && (() => {
+        const top5 = seo.top_pages.slice(0, 5);
+        const rest = seo.top_pages.slice(5);
+        const maxImpr = Math.max(...top5.map(p => p.impressions), 1);
+        return (
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
-            gap: 8, padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
-            fontSize: 10, color: C.faint, textTransform: 'uppercase',
-            letterSpacing: 0.6, fontWeight: 600,
+            background: C.panel, border: `1px solid ${C.border}`,
+            borderRadius: 8, marginBottom: 12, overflow: 'hidden',
           }}>
-            <div>Top pages</div>
-            <div style={{ textAlign: 'right' }}>Clicks</div>
-            <div style={{ textAlign: 'right' }}>Impr</div>
-            <div style={{ textAlign: 'right' }}>CTR</div>
-            <div style={{ textAlign: 'right' }}>Pos</div>
-          </div>
-          {seo.top_pages.map((p, i) => {
-            // CTR optimization opportunity flag: high impressions + low CTR + decent position
-            const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
-            const opportunity = p.impressions >= 50 && ctrNum < 1 && Number(p.position) <= 30;
-            return (
-              <div key={i} style={{
-                display: 'grid', gridTemplateColumns: '1fr 60px 70px 60px 60px',
-                gap: 8, padding: '7px 14px', fontSize: 12.5,
-                borderBottom: i < seo.top_pages.length - 1 ? `1px solid ${C.border}` : 'none',
-                alignItems: 'center',
-              }}>
-                <div style={{
-                  color: C.text, overflow: 'hidden', textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 11.5,
-                }}>
-                  {p.path}
-                  {opportunity && (
-                    <span title="High impressions, low CTR — title/meta optimization opportunity"
-                      style={{ marginLeft: 6, color: C.amber, fontSize: 11 }}>⚡</span>
-                  )}
+            <div style={{
+              fontSize: 10, color: C.faint, textTransform: 'uppercase',
+              letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
+              borderBottom: `1px solid ${C.border}`,
+            }}>Top Pages</div>
+            {top5.map((p, i) => {
+              const pos = Number(p.position);
+              const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
+              const barW = Math.max(2, (p.impressions / maxImpr) * 100);
+              const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+              const opp = p.impressions >= 50 && ctrNum < 1 && pos <= 30;
+              return (
+                <div key={i} style={{ padding: '8px 14px', borderBottom: i < 4 ? `1px solid ${C.border}` : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 28, height: 22, borderRadius: 4, fontSize: 11, fontWeight: 700,
+                      fontFamily: monoStack, background: `${posColor}18`, color: posColor,
+                      border: `1px solid ${posColor}40`, flexShrink: 0,
+                    }}>{pos.toFixed(0)}</span>
+                    <span style={{
+                      fontSize: 11.5, color: C.text, fontFamily: monoStack,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                    }}>
+                      {p.path}
+                      {opp && <span title="CTR optimization opportunity" style={{ marginLeft: 4, color: C.amber, fontSize: 10 }}>⚡</span>}
+                    </span>
+                    <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, flexShrink: 0, display: 'flex', gap: 8 }}>
+                      <span style={{ color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600 }}>{p.clicks}cl</span>
+                      <span>{p.impressions}imp</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 4, background: 'rgba(99,179,237,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${barW}%`, background: posColor, opacity: 0.5, borderRadius: 2 }} />
+                  </div>
                 </div>
-                <div style={{
-                  textAlign: 'right', fontFamily: monoStack,
-                  color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600,
-                }}>{p.clicks}</div>
-                <div style={{
-                  textAlign: 'right', fontFamily: monoStack, color: C.muted,
-                }}>{p.impressions}</div>
-                <div style={{
-                  textAlign: 'right', fontFamily: monoStack,
-                  color: opportunity ? C.amber : C.muted, fontWeight: opportunity ? 600 : 400,
-                }}>{p.ctr}</div>
-                <div style={{
-                  textAlign: 'right', fontFamily: monoStack,
-                  color: Number(p.position) <= 10 ? C.green : Number(p.position) <= 30 ? C.amber : C.muted,
-                  fontWeight: 600,
-                }}>{p.position}</div>
-              </div>
-            );
-          })}
-          <div style={{
-            padding: '6px 14px', fontSize: 10, color: C.faint,
-            background: 'rgba(99,179,237,0.03)', borderTop: `1px solid ${C.border}`,
-          }}>
-            <span style={{ color: C.amber }}>⚡</span> = CTR optimization opportunity (high impressions, low CTR, decent position)
+              );
+            })}
+            {rest.length > 0 && (
+              <details>
+                <summary style={{
+                  padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
+                  fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
+                }}>+ {rest.length} more pages</summary>
+                {rest.map((p, i) => (
+                  <div key={i} style={{
+                    display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
+                    gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
+                    color: C.muted, fontFamily: monoStack,
+                  }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
+                    <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
+                    <div style={{ textAlign: 'right' }}>{p.impressions}</div>
+                    <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
+                  </div>
+                ))}
+              </details>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {queries.length > 0 && (
         <details style={{
