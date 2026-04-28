@@ -538,7 +538,7 @@ export default function CompanySnapshot() {
         {errors.ads ? (
           <ErrorBanner section="Google Ads" error={errors.ads} />
         ) : ads ? (
-          <AdsPanel ads={ads} />
+          <AdsPanel ads={ads} actions={actionsFor("ads")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
       </Section>
 
@@ -570,7 +570,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="Competitors" error={errors.competitors} />
           )
         ) : competitors ? (
-          <CompetitorsPanel data={competitors} />
+          <CompetitorsPanel data={competitors} actions={actionsFor("competitors")} onComplete={completeAction} onDismiss={dismissAction} />
         ) : null}
       </Section>
 
@@ -586,7 +586,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="SEO" error={errors.seo} />
           )
         ) : seo ? (
-          <SeoPanel seo={seo} />
+          <SeoPanel seo={seo} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
       </Section>
 
@@ -602,7 +602,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="Backlinks" error={errors.backlinks} />
           )
         ) : backlinks ? (
-          <BacklinksPanel data={backlinks} />
+          <BacklinksPanel data={backlinks} actions={actionsFor("backlinks")} onComplete={completeAction} onDismiss={dismissAction} />
         ) : null}
       </Section>
 
@@ -879,7 +879,7 @@ function SearchTermsPanel({ data, actions = [], onComplete, onDismiss }) {
   );
 }
 
-function AdsPanel({ ads }) {
+function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
   const t = ads.current?.totals || {};
   const p = ads.previous?.totals || {};
   const daily = (ads.daily || []).map(d => ({
@@ -1045,7 +1045,7 @@ function AdsPanel({ ads }) {
           );
         }
 
-        return <InsightSummary tone={tone} headline={headline} action={action} />;
+        return <InsightSummary tone={tone} headline={headline} action={action} actions={actions} onComplete={onComplete} onDismiss={onDismiss} />;
       })()}
     </div>
   );
@@ -1080,7 +1080,7 @@ function MiniStat({ label, value, delta, invert, status }) {
 }
 
 // ── Competitors Panel ──────────────────────────────────────────────────────
-function CompetitorsPanel({ data }) {
+function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
   const rows = data?.rows || [];
   if (rows.length === 0) {
     return (
@@ -1369,14 +1369,14 @@ function CompetitorsPanel({ data }) {
           action = 'Increase daily budget or broaden keyword targeting to capture more auction opportunities. Review search terms for coverage gaps.';
         }
 
-        return <InsightSummary tone={tone} headline={headline} action={action} />;
+        return <InsightSummary tone={tone} headline={headline} action={action} actions={actions} onComplete={onComplete} onDismiss={onDismiss} />;
       })()}
     </div>
   );
 }
 
 // ── Backlinks Panel ────────────────────────────────────────────────────────
-function BacklinksPanel({ data }) {
+function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
   const links = data?.links || [];
   const total = data?.total_referring_domains || links.length;
   const editorialCount = data?.editorial_count ?? 0;
@@ -1550,7 +1550,7 @@ function BacklinksPanel({ data }) {
           action = null;
         }
 
-        return <InsightSummary tone={tone} headline={headline} action={action} />;
+        return <InsightSummary tone={tone} headline={headline} action={action} actions={actions} onComplete={onComplete} onDismiss={onDismiss} />;
       })()}
 
       {/* Action note */}
@@ -1567,7 +1567,7 @@ function BacklinksPanel({ data }) {
 }
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
-function SeoPanel({ seo }) {
+function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
   const t = seo.current?.totals || {};
   const p = seo.previous?.totals || {};
   const queries = seo.top_queries || [];
@@ -2031,7 +2031,7 @@ function SeoPanel({ seo }) {
           </span>
         );
 
-        return <InsightSummary tone={tone} headline={headline} action={action} />;
+        return <InsightSummary tone={tone} headline={headline} action={action} actions={actions} onComplete={onComplete} onDismiss={onDismiss} />;
       })()}
 
       {/* Competitor data note */}
