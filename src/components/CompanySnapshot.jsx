@@ -279,6 +279,7 @@ export default function CompanySnapshot() {
   const [operators, setOperators] = useState(null);
   const [competitors, setCompetitors] = useState(null);
   const [backlinks, setBacklinks] = useState(null);
+  const [searchTerms, setSearchTerms] = useState(null);
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
@@ -301,6 +302,7 @@ export default function CompanySnapshot() {
       ['operators', '/prospects?operator_status=pilot_active', setOperators],
       ['competitors', '/competitors/auction-insights', setCompetitors],
       ['backlinks', '/seo/backlinks', setBacklinks],
+      ['searchTerms', `/ads/search-terms?days=${days}`, setSearchTerms],
     ];
 
     await Promise.all(sources.map(async ([key, path, setter]) => {
@@ -478,7 +480,23 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ── Competitors (Google Ads Auction Insights) ──────────────────── */}
+      {/* ── Search Terms ──────────────────────────────────────────────── */}
+      <Section
+        title="Search Terms"
+        right={searchTerms?.date_range ? `${fmtDate(searchTerms.date_range.start)} → ${fmtDate(searchTerms.date_range.end)}` : null}
+      >
+        {errors.searchTerms ? (
+          errors.searchTerms.includes('404') || errors.searchTerms.includes('Not found') ? (
+            <PendingPanel message="Search Terms endpoint requires CRM API v2.14.0." />
+          ) : (
+            <ErrorBanner section="Search Terms" error={errors.searchTerms} />
+          )
+        ) : searchTerms ? (
+          <SearchTermsPanel data={searchTerms} />
+        ) : null}
+      </Section>
+
+            {/* ── Competitors (Google Ads Auction Insights) ──────────────────── */}
       <Section
         title="Competitive Landscape"
         right={competitors?.period_label || null}
@@ -672,6 +690,97 @@ function PipelinePanel({ stats, leadsAnalytics }) {
 }
 
 // ── Ads Panel ──────────────────────────────────────────────────────────────
+// ── Search Terms Panel ────────────────────────────────────────────────────
+const NEG_CANDIDATES = [
+  '1 800 got junk', 'got junk', 'junk removal', 'junk haul',
+  'trash haul away', 'haul away', 'dump florence', 'dump near',
+  'bagster', 'environmental disposal', '10 yard dumpster dimension',
+  'dumper trash',
+];
+
+function SearchTermsPanel({ data }) {
+  const terms = data.search_terms || [];
+  const totals = data.search_term_totals || {};
+  const negHits = terms.filter(t =>
+    NEG_CANDIDATES.some(n => t.search_term.includes(n)) && t.clicks === 0
+  );
+
+  return (
+    <div>
+      {/* Summary cards */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <MiniStat label="Unique Terms" value={totals.unique_terms || 0} />
+        <MiniStat label="Total Clicks" value={totals.total_clicks || 0} />
+        <MiniStat label="Total Impr" value={totals.total_impressions || 0} />
+        <MiniStat label="Total Spend" value={fmtMoneyDecimal(totals.total_spend || 0)} />
+      </div>
+
+      {/* Negative suggestions */}
+      {negHits.length > 0 && (
+        <div style={{
+          padding: '8px 12px', marginBottom: 12, borderRadius: 6,
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+          fontSize: 12, color: C.amber, fontWeight: 500,
+        }}>
+          ⚠ <strong>Potential negatives ({negHits.length}):</strong>{' '}
+          {negHits.map(t => `"${t.search_term}"`).join(', ')}
+        </div>
+      )}
+
+      {/* Search terms table */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 70px 50px 50px 55px 60px 60px',
+          gap: 4, padding: '8px 12px', borderBottom: `1px solid ${C.border}`,
+          fontSize: 10, color: C.faint, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600,
+        }}>
+          <div>Search Term</div>
+          <div>Status</div>
+          <div style={{ textAlign: 'right' }}>Clicks</div>
+          <div style={{ textAlign: 'right' }}>Impr</div>
+          <div style={{ textAlign: 'right' }}>CTR</div>
+          <div style={{ textAlign: 'right' }}>CPC</div>
+          <div style={{ textAlign: 'right' }}>Spend</div>
+        </div>
+        {terms.slice(0, 30).map((t, i) => {
+          const isNeg = NEG_CANDIDATES.some(n => t.search_term.includes(n));
+          const pillColor = t.status === 'ADDED' ? C.blue : isNeg ? C.red : C.muted;
+          const pillLabel = t.status === 'ADDED' ? 'ADDED' : isNeg ? 'FLAG' : 'BROAD';
+          return (
+            <div key={i} style={{
+              display: 'grid', gridTemplateColumns: '1fr 70px 50px 50px 55px 60px 60px',
+              gap: 4, padding: '6px 12px', fontSize: 12, borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
+              alignItems: 'center', opacity: isNeg ? 0.5 : 1,
+            }}>
+              <div style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoStack, fontSize: 11 }}>
+                {t.search_term}
+              </div>
+              <div>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
+                  background: `${pillColor}18`, color: pillColor, border: `1px solid ${pillColor}40`,
+                }}>
+                  {pillLabel}
+                </span>
+              </div>
+              <div style={{ textAlign: 'right', fontFamily: monoStack, color: t.clicks > 0 ? C.text : C.muted }}>{t.clicks}</div>
+              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.impressions}</div>
+              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.ctr}</div>
+              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>{t.avg_cpc}</div>
+              <div style={{ textAlign: 'right', fontFamily: monoStack, color: C.muted }}>${t.spend.toFixed(2)}</div>
+            </div>
+          );
+        })}
+        {terms.length > 30 && (
+          <div style={{ padding: '8px 12px', fontSize: 11, color: C.faint, textAlign: 'center', borderTop: `1px solid ${C.border}` }}>
+            + {terms.length - 30} more terms (showing top 30 by impressions)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdsPanel({ ads }) {
   const t = ads.current?.totals || {};
   const p = ads.previous?.totals || {};
