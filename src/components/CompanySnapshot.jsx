@@ -10,6 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
   ComposedChart, Line, Legend,
 } from 'recharts';
+import FinancialsPanel from './FinancialsPanel';
 
 const API_BASE = import.meta.env.VITE_CRM_API_URL || '';
 const API_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || '';
@@ -306,6 +307,7 @@ export default function CompanySnapshot() {
   const [competitors, setCompetitors] = useState(null);
   const [backlinks, setBacklinks] = useState(null);
   const [searchTerms, setSearchTerms] = useState(null);
+  const [financials, setFinancials] = useState(null);
 
   const [actionItems, setActionItems] = useState([]);
 
@@ -331,6 +333,7 @@ export default function CompanySnapshot() {
       ['competitors', '/competitors/auction-insights', setCompetitors],
       ['backlinks', '/seo/backlinks', setBacklinks],
       ['searchTerms', `/ads/search-terms?days=${days}`, setSearchTerms],
+      ['financials', '/financials', setFinancials],
     ];
 
     await Promise.all(sources.map(async ([key, path, setter]) => {
@@ -531,6 +534,22 @@ export default function CompanySnapshot() {
         ) : (
           <PipelinePanel stats={stats} leadsAnalytics={leadsAnalytics} />
         )}
+      </Section>
+
+      {/* ── Financials (Mercury) ──────────────────────────────────────── */}
+      <Section
+        title="Financials"
+        right={financials?.snapshot_date ? `Snapshot ${fmtDate(financials.snapshot_date)}` : null}
+      >
+        {errors.financials ? (
+          errors.financials.includes('404') || errors.financials.includes('Not found') ? (
+            <PendingPanel message="Financials endpoint requires CRM API v2.15.0." />
+          ) : (
+            <ErrorBanner section="Financials" error={errors.financials} />
+          )
+        ) : financials ? (
+          <FinancialsPanel data={financials} />
+        ) : null}
       </Section>
 
       {/* ── Google Ads ─────────────────────────────────────────────────── */}
