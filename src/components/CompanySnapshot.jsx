@@ -303,6 +303,7 @@ export default function CompanySnapshot() {
   const [leadsAnalytics, setLeadsAnalytics] = useState(null);
   const [ads, setAds] = useState(null);
   const [seo, setSeo] = useState(null);
+  const [seoPrev, setSeoPrev] = useState(null);
   const [operators, setOperators] = useState(null);
   const [competitors, setCompetitors] = useState(null);
   const [backlinks, setBacklinks] = useState(null);
@@ -329,6 +330,7 @@ export default function CompanySnapshot() {
       ['leadsAnalytics', `/leads/analytics?days=${days}`, setLeadsAnalytics],
       ['ads', `/ads/metrics?days=${days}`, setAds],
       ['seo', `/seo/metrics?days=${days}`, setSeo],
+      ['seoPrev', `/seo/metrics?days=${days * 2}`, setSeoPrev],
       ['operators', '/prospects', (d) => { const ops = (d.prospects || []).filter(p => p.operator_status === 'pilot_active' || p.operator_status === 'active'); setOperators({ prospects: ops }); }, setOperators],
       ['competitors', '/competitors/auction-insights', setCompetitors],
       ['backlinks', '/seo/backlinks', setBacklinks],
@@ -608,7 +610,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="SEO" error={errors.seo} />
           )
         ) : seo ? (
-          <SeoPanel seo={seo} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
+          <SeoPanel seo={seo} seoPrev={seoPrev} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
       </Section>
 
@@ -1589,7 +1591,7 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 }
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
-function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
+function SeoPanel({ seo, seoPrev, actions = [], onComplete, onDismiss, onSync }) {
   const t = seo.current?.totals || {};
   const p = seo.previous?.totals || {};
   const queries = seo.top_queries || [];
@@ -1672,125 +1674,168 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
       )}
 
 
-      {/* Top Pages — split into Money Pages (buying intent) vs Resource Pages */}
+      {/* ── Money Page Movement — position delta on buying-intent pages ── */}
       {seo.top_pages && seo.top_pages.length > 0 && (() => {
         const allPages = seo.top_pages.map(p => ({ ...p, type: classifyPage(p.path || p.page_url || '') }));
         const moneyPages = allPages.filter(p => p.type === 'money').sort((a, b) => b.impressions - a.impressions);
         const resourcePages = allPages.filter(p => p.type === 'resource').sort((a, b) => b.impressions - a.impressions);
 
-        const renderPageRow = (p, i, total) => {
-          const pos = Number(p.position);
-          const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
-          const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
-          const opp = p.impressions >= 50 && ctrNum < 1 && pos <= 30;
-          return (
-            <div key={i} style={{ padding: '8px 14px', borderBottom: i < total - 1 ? `1px solid ${C.border}` : 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 28, height: 22, borderRadius: 4, fontSize: 11, fontWeight: 700,
-                  fontFamily: monoStack, background: `${posColor}18`, color: posColor,
-                  border: `1px solid ${posColor}40`, flexShrink: 0,
-                }}>{pos.toFixed(0)}</span>
-                <span style={{
-                  fontSize: 11.5, color: C.text, fontFamily: monoStack,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-                }}>
-                  {p.path}
-                  {opp && <span title="CTR optimization opportunity" style={{ marginLeft: 4, color: C.amber, fontSize: 10 }}>⚡</span>}
-                </span>
-                <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, flexShrink: 0, display: 'flex', gap: 8 }}>
-                  <span style={{ color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600 }}>{p.clicks}cl</span>
-                  <span>{p.impressions}imp</span>
-                </span>
-              </div>
-            </div>
-          );
-        };
+        // Build prev-period position lookup from seoPrev (2x window)
+        const prevMap = {};
+        if (seoPrev?.top_pages) {
+          seoPrev.top_pages.forEach(p => {
+            const path = p.path || p.page_url || '';
+            prevMap[path] = Number(p.position);
+          });
+        }
 
         return (
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 10, marginBottom: 12,
-          }}>
-            {/* Money Pages — buying intent */}
+          <>
+            {/* Money Page Movement */}
             <div style={{
               background: C.panel, border: `1px solid ${C.border}`,
-              borderRadius: 8, overflow: 'hidden',
+              borderRadius: 8, overflow: 'hidden', marginBottom: 12,
             }}>
               <div style={{
                 fontSize: 10, color: C.green, textTransform: 'uppercase',
                 letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
                 borderBottom: `1px solid ${C.border}`,
-              }}>💰 Money Pages</div>
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span>💰 Money Page Movement</span>
+                {seoPrev && <span style={{ color: C.faint, fontWeight: 400, textTransform: 'none', fontSize: 9 }}>vs {days * 2}-day avg</span>}
+              </div>
               {moneyPages.length === 0 ? (
                 <div style={{ padding: '12px 14px', fontSize: 12, color: C.muted }}>No rental/service pages in GSC data yet.</div>
-              ) : (
-                <>
-                  {moneyPages.slice(0, 5).map((p, i) => renderPageRow(p, i, Math.min(moneyPages.length, 5)))}
-                  {moneyPages.length > 5 && (
-                    <details>
-                      <summary style={{
-                        padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
-                        fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
-                      }}>+ {moneyPages.length - 5} more</summary>
-                      {moneyPages.slice(5).map((p, i) => (
-                        <div key={i} style={{
-                          display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
-                          gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
-                          color: C.muted, fontFamily: monoStack,
-                        }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
-                          <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
-                          <div style={{ textAlign: 'right' }}>{p.impressions}</div>
-                          <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
-                        </div>
-                      ))}
-                    </details>
-                  )}
-                </>
-              )}
+              ) : moneyPages.map((p, i) => {
+                const pos = Number(p.position);
+                const prevPos = prevMap[p.path || p.page_url || ''];
+                const hasDelta = prevPos != null && !isNaN(prevPos);
+                const delta = hasDelta ? prevPos - pos : null; // positive = improving
+                const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
+                const deltaColor = delta > 0.5 ? C.green : delta < -0.5 ? C.red : C.muted;
+                const deltaLabel = delta > 0.5 ? `▲${delta.toFixed(1)}` : delta < -0.5 ? `▼${Math.abs(delta).toFixed(1)}` : '—';
+                return (
+                  <div key={i} style={{
+                    padding: '10px 14px',
+                    borderBottom: i < moneyPages.length - 1 ? `1px solid ${C.border}` : 'none',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    {/* Position badge */}
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 32, height: 24, borderRadius: 4, fontSize: 12, fontWeight: 700,
+                      fontFamily: monoStack, background: `${posColor}18`, color: posColor,
+                      border: `1px solid ${posColor}40`, flexShrink: 0,
+                    }}>{pos.toFixed(0)}</span>
+                    {/* Delta arrow */}
+                    {hasDelta && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, fontFamily: monoStack,
+                        color: deltaColor, width: 36, textAlign: 'center', flexShrink: 0,
+                      }}>{deltaLabel}</span>
+                    )}
+                    {/* Page path */}
+                    <span style={{
+                      fontSize: 11.5, color: C.text, fontFamily: monoStack,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                    }}>{p.path}</span>
+                    {/* Stats */}
+                    <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, flexShrink: 0, display: 'flex', gap: 8 }}>
+                      <span style={{ color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600 }}>{p.clicks}cl</span>
+                      <span>{p.impressions}imp</span>
+                      <span>{p.ctr}</span>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Resource Pages — informational (guides, blog, landfill) */}
-            <div style={{
-              background: C.panel, border: `1px solid ${C.border}`,
-              borderRadius: 8, overflow: 'hidden',
-            }}>
-              <div style={{
-                fontSize: 10, color: C.muted, textTransform: 'uppercase',
-                letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
-                borderBottom: `1px solid ${C.border}`,
-              }}>📄 Resource Pages</div>
-              {resourcePages.length === 0 ? (
-                <div style={{ padding: '12px 14px', fontSize: 12, color: C.muted }}>No guide/blog pages in GSC data yet.</div>
-              ) : (
-                <>
-                  {resourcePages.slice(0, 3).map((p, i) => renderPageRow(p, i, Math.min(resourcePages.length, 3)))}
-                  {resourcePages.length > 3 && (
-                    <details>
-                      <summary style={{
-                        padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
-                        fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
-                      }}>+ {resourcePages.length - 3} more</summary>
-                      {resourcePages.slice(3).map((p, i) => (
-                        <div key={i} style={{
-                          display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
-                          gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
-                          color: C.muted, fontFamily: monoStack,
-                        }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
-                          <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
-                          <div style={{ textAlign: 'right' }}>{p.impressions}</div>
-                          <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
+            {/* CTR Optimization Targets — high impressions, low CTR, rankable position */}
+            {(() => {
+              const ctrTargets = allPages
+                .filter(p => {
+                  const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+                  return p.impressions >= 30 && ctrNum < 2 && Number(p.position) <= 30;
+                })
+                .sort((a, b) => b.impressions - a.impressions)
+                .slice(0, 5);
+              if (ctrTargets.length === 0) return null;
+              return (
+                <div style={{
+                  background: C.panel, border: `1px solid ${C.border}`,
+                  borderRadius: 8, overflow: 'hidden', marginBottom: 12,
+                }}>
+                  <div style={{
+                    fontSize: 10, color: C.amber, textTransform: 'uppercase',
+                    letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
+                    borderBottom: `1px solid ${C.border}`,
+                  }}>⚡ CTR Optimization Targets</div>
+                  <div style={{ padding: '8px 14px 4px', fontSize: 10, color: C.faint, lineHeight: 1.4 }}>
+                    Pages with impressions but low click-through — rewrite title/meta for free traffic gains
+                  </div>
+                  {ctrTargets.map((p, i) => {
+                    const pos = Number(p.position);
+                    const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+                    const potentialClicks = Math.round(p.impressions * 0.03) - p.clicks; // 3% target CTR
+                    return (
+                      <div key={i} style={{
+                        padding: '8px 14px',
+                        borderBottom: i < ctrTargets.length - 1 ? `1px solid ${C.border}` : 'none',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                          <span style={{
+                            fontSize: 11.5, color: C.text, fontFamily: monoStack,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                          }}>{p.path}</span>
                         </div>
-                      ))}
-                    </details>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+                        <div style={{
+                          fontSize: 10, color: C.muted, fontFamily: monoStack,
+                          display: 'flex', gap: 12,
+                        }}>
+                          <span>Pos <strong style={{ color: pos <= 10 ? C.green : C.amber }}>{pos.toFixed(0)}</strong></span>
+                          <span>{fmtNum(p.impressions)} impr</span>
+                          <span style={{ color: C.red }}>{p.ctr} CTR</span>
+                          {potentialClicks > 0 && (
+                            <span style={{ color: C.green }}>+{potentialClicks} clicks at 3%</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Resource Pages — collapsed */}
+            {resourcePages.length > 0 && (
+              <details style={{
+                background: C.panel, border: `1px solid ${C.border}`,
+                borderRadius: 8, overflow: 'hidden', marginBottom: 12,
+              }}>
+                <summary style={{
+                  padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
+                  fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}>📄 Resource pages ({resourcePages.length})</summary>
+                {resourcePages.map((p, i) => {
+                  const pos = Number(p.position);
+                  return (
+                    <div key={i} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
+                      gap: 6, padding: '6px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
+                      color: C.muted, fontFamily: monoStack,
+                    }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
+                      <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
+                      <div style={{ textAlign: 'right' }}>{p.impressions}</div>
+                      <div style={{ textAlign: 'right', color: pos <= 10 ? C.green : C.muted }}>{p.position}</div>
+                    </div>
+                  );
+                })}
+              </details>
+            )}
+          </>
         );
       })()}
 
