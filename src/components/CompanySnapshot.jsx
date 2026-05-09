@@ -610,7 +610,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="SEO" error={errors.seo} />
           )
         ) : seo ? (
-          <SeoPanel seo={seo} seoPrev={seoPrev} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
+          <SeoPanel seo={seo} seoPrev={seoPrev} days={days} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
       </Section>
 
@@ -1591,7 +1591,7 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 }
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
-function SeoPanel({ seo, seoPrev, actions = [], onComplete, onDismiss, onSync }) {
+function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
   const t = seo.current?.totals || {};
   const p = seo.previous?.totals || {};
   const queries = seo.top_queries || [];
