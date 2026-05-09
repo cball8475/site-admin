@@ -1615,44 +1615,17 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
     ? -1 * Math.round(((posNum - Number(p.position)) / Number(p.position)) * 100)
     : null;
 
-  // ── Competitive Insights (inferred from GSC) ──
-  // Queries we're winning: page 1 (≤10) sorted by impressions desc
-  const winning = queries
-    .filter(q => Number(q.position) <= 10 && q.impressions >= 5)
-    .sort((a, b) => b.impressions - a.impressions)
-    .slice(0, 3);
-
-  // Biggest opportunities: page 2+ with meaningful impressions — competitors are winning these
-  const opportunities = queries
-    .filter(q => Number(q.position) > 10 && q.impressions >= 10)
-    .sort((a, b) => b.impressions - a.impressions)
-    .slice(0, 3);
-
-  // ── Tracked Keywords — city expansion push ──
-  const TRACKED_KEYWORDS = [
-    { label: 'Florence', patterns: ['dumpster rental florence', 'rent a dumpster florence', 'dumpster for rent florence', 'renting a dumpster florence', 'dumpster florence sc'] },
-    { label: 'Darlington', patterns: ['dumpster rental darlington', 'rent a dumpster darlington', 'dumpster for rent darlington', 'renting a dumpster darlington', 'rental dumpster darlington', 'dumpster darlington sc'] },
-    { label: 'Hartsville', patterns: ['dumpster rental hartsville', 'rent a dumpster hartsville', 'dumpster for rent hartsville', 'renting a dumpster hartsville', 'rental dumpster hartsville', 'dumpster hartsville sc'] },
-  ];
-
-  const trackedResults = TRACKED_KEYWORDS.map(tk => {
-    // Find the best-matching query from GSC data for each tracked keyword group
-    const matches = queries.filter(q =>
-      tk.patterns.some(p => (q.query || '').toLowerCase().includes(p))
-    );
-    if (matches.length === 0) return { ...tk, found: false };
-    // Pick the one with most impressions as the primary
-    const best = matches.sort((a, b) => b.impressions - a.impressions)[0];
-    return {
-      ...tk,
-      found: true,
-      query: best.query,
-      position: Number(best.position),
-      clicks: best.clicks,
-      impressions: best.impressions,
-      ctr: best.ctr,
-    };
-  });
+  // ── Page categorization for Top Pages ──
+  // Money pages = pages with buying intent (dumpster rental, services, pricing, homepage)
+  // Resource pages = informational (landfill guides, blog, permits)
+  const classifyPage = (path) => {
+    const p = (path || '').toLowerCase();
+    if (p === '/' || p === '' || p === '/index.html') return 'money';
+    if (p.includes('dumpster-rental') || p.includes('dumpster_rental')) return 'money';
+    if (p.includes('services') || p.includes('pricing') || p.includes('contact')) return 'money';
+    if (p.includes('construction-dumpster') || p.includes('residential-dumpster')) return 'money';
+    return 'resource';
+  };
 
   return (
     <div>
@@ -1663,70 +1636,6 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
         <MiniStat label="Avg Position" value={t.position || '—'} delta={posDelta} status={status.position} />
       </div>
 
-      {/* Keyword Rank Tracker — city expansion */}
-      <div style={{
-        background: C.panel, border: `1px solid ${C.border}`,
-        borderRadius: 8, padding: 12, marginBottom: 12,
-      }}>
-        <div style={{
-          fontSize: 10, color: C.faint, textTransform: 'uppercase',
-          letterSpacing: 0.8, fontWeight: 600, marginBottom: 10,
-        }}>Keyword Rank Tracker — City Push</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
-          {trackedResults.map((tk, i) => {
-            const posColor = !tk.found ? C.muted
-              : tk.position <= 10 ? C.green
-              : tk.position <= 20 ? '#22d3ee'
-              : tk.position <= 30 ? C.amber
-              : C.red;
-            const pageNum = tk.found ? Math.ceil(tk.position / 10) : null;
-            return (
-              <div key={i} style={{
-                padding: '10px 12px',
-                background: C.bg,
-                border: `1px solid ${C.border}`,
-                borderRadius: 6,
-                position: 'relative',
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-                  background: posColor,
-                }} />
-                <div style={{
-                  fontSize: 11.5, fontWeight: 600, color: C.text, marginBottom: 4,
-                }}>{tk.label}</div>
-                {tk.found ? (
-                  <>
-                    <div style={{
-                      fontSize: 10.5, color: C.muted, marginBottom: 6,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>"{tk.query}"</div>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                      <span style={{
-                        fontSize: 20, fontWeight: 700, color: posColor,
-                        fontFamily: monoStack,
-                      }}>{tk.position.toFixed(1)}</span>
-                      <span style={{ fontSize: 10, color: C.muted }}>page {pageNum}</span>
-                    </div>
-                    <div style={{
-                      marginTop: 6, fontSize: 10, color: C.muted,
-                      fontFamily: monoStack, display: 'flex', gap: 10,
-                    }}>
-                      <span>{tk.clicks} click{tk.clicks !== 1 ? 's' : ''}</span>
-                      <span>{fmtNum(tk.impressions)} impr</span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 4 }}>
-                    Not yet indexed — no GSC data
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Daily trend chart */}
       {daily.length > 0 && (
@@ -1762,143 +1671,125 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
         </div>
       )}
 
-      {/* Competitive Insights — Winning vs Opportunities */}
-      {(winning.length > 0 || opportunities.length > 0) && (
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 10, marginBottom: 12,
-        }}>
-          {/* Winning queries */}
-          <div style={{
-            background: C.panel, border: `1px solid ${C.border}`,
-            borderRadius: 8, padding: 12,
-          }}>
-            <div style={{
-              fontSize: 10, color: C.green, textTransform: 'uppercase',
-              letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
-            }}>🟢 Where you're winning</div>
-            {winning.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.muted }}>No page-1 rankings yet.</div>
-            ) : winning.map((q, i) => (
-              <div key={i} style={{
-                paddingTop: i === 0 ? 0 : 6, paddingBottom: 6,
-                borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
-              }}>
-                <div style={{ fontSize: 12.5, color: C.text, marginBottom: 2 }}>{q.query}</div>
-                <div style={{
-                  fontSize: 10.5, color: C.muted, fontFamily: monoStack,
-                  display: 'flex', gap: 12,
-                }}>
-                  <span>Pos <span style={{ color: C.green, fontWeight: 600 }}>{q.position}</span></span>
-                  <span>{fmtNum(q.impressions)} impr</span>
-                  <span>{q.clicks} clicks</span>
-                </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Biggest opportunities (where competitors are winning) */}
-          <div style={{
-            background: C.panel, border: `1px solid ${C.border}`,
-            borderRadius: 8, padding: 12,
-          }}>
-            <div style={{
-              fontSize: 10, color: C.amber, textTransform: 'uppercase',
-              letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
-            }}>🟡 Biggest opportunities</div>
-            <div style={{ fontSize: 10, color: C.faint, marginBottom: 8, lineHeight: 1.4 }}>
-              High-demand queries where competitors rank above you
-            </div>
-            {opportunities.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.muted }}>None — all top queries are page 1.</div>
-            ) : opportunities.map((q, i) => (
-              <div key={i} style={{
-                paddingTop: i === 0 ? 0 : 6, paddingBottom: 6,
-                borderTop: i > 0 ? `1px solid ${C.border}` : 'none',
-              }}>
-                <div style={{ fontSize: 12.5, color: C.text, marginBottom: 2 }}>{q.query}</div>
-                <div style={{
-                  fontSize: 10.5, color: C.muted, fontFamily: monoStack,
-                  display: 'flex', gap: 12,
-                }}>
-                  <span>Pos <span style={{ color: C.amber, fontWeight: 600 }}>{q.position}</span></span>
-                  <span>{fmtNum(q.impressions)} impr</span>
-                  <span>{q.clicks} clicks</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Top Pages — ranked list (top 5) + collapsible full table */}
+      {/* Top Pages — split into Money Pages (buying intent) vs Resource Pages */}
       {seo.top_pages && seo.top_pages.length > 0 && (() => {
-        const top5 = seo.top_pages.slice(0, 5);
-        const rest = seo.top_pages.slice(5);
-        const maxImpr = Math.max(...top5.map(p => p.impressions), 1);
+        const allPages = seo.top_pages.map(p => ({ ...p, type: classifyPage(p.path || p.page_url || '') }));
+        const moneyPages = allPages.filter(p => p.type === 'money').sort((a, b) => b.impressions - a.impressions);
+        const resourcePages = allPages.filter(p => p.type === 'resource').sort((a, b) => b.impressions - a.impressions);
+
+        const renderPageRow = (p, i, total) => {
+          const pos = Number(p.position);
+          const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
+          const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
+          const opp = p.impressions >= 50 && ctrNum < 1 && pos <= 30;
+          return (
+            <div key={i} style={{ padding: '8px 14px', borderBottom: i < total - 1 ? `1px solid ${C.border}` : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 22, borderRadius: 4, fontSize: 11, fontWeight: 700,
+                  fontFamily: monoStack, background: `${posColor}18`, color: posColor,
+                  border: `1px solid ${posColor}40`, flexShrink: 0,
+                }}>{pos.toFixed(0)}</span>
+                <span style={{
+                  fontSize: 11.5, color: C.text, fontFamily: monoStack,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                }}>
+                  {p.path}
+                  {opp && <span title="CTR optimization opportunity" style={{ marginLeft: 4, color: C.amber, fontSize: 10 }}>⚡</span>}
+                </span>
+                <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, flexShrink: 0, display: 'flex', gap: 8 }}>
+                  <span style={{ color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600 }}>{p.clicks}cl</span>
+                  <span>{p.impressions}imp</span>
+                </span>
+              </div>
+            </div>
+          );
+        };
+
         return (
           <div style={{
-            background: C.panel, border: `1px solid ${C.border}`,
-            borderRadius: 8, marginBottom: 12, overflow: 'hidden',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 10, marginBottom: 12,
           }}>
+            {/* Money Pages — buying intent */}
             <div style={{
-              fontSize: 10, color: C.faint, textTransform: 'uppercase',
-              letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
-              borderBottom: `1px solid ${C.border}`,
-            }}>Top Pages</div>
-            {top5.map((p, i) => {
-              const pos = Number(p.position);
-              const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
-              const barW = Math.max(2, (p.impressions / maxImpr) * 100);
-              const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
-              const opp = p.impressions >= 50 && ctrNum < 1 && pos <= 30;
-              return (
-                <div key={i} style={{ padding: '8px 14px', borderBottom: i < 4 ? `1px solid ${C.border}` : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 28, height: 22, borderRadius: 4, fontSize: 11, fontWeight: 700,
-                      fontFamily: monoStack, background: `${posColor}18`, color: posColor,
-                      border: `1px solid ${posColor}40`, flexShrink: 0,
-                    }}>{pos.toFixed(0)}</span>
-                    <span style={{
-                      fontSize: 11.5, color: C.text, fontFamily: monoStack,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-                    }}>
-                      {p.path}
-                      {opp && <span title="CTR optimization opportunity" style={{ marginLeft: 4, color: C.amber, fontSize: 10 }}>⚡</span>}
-                    </span>
-                    <span style={{ fontSize: 10, color: C.muted, fontFamily: monoStack, flexShrink: 0, display: 'flex', gap: 8 }}>
-                      <span style={{ color: p.clicks > 0 ? C.green : C.muted, fontWeight: 600 }}>{p.clicks}cl</span>
-                      <span>{p.impressions}imp</span>
-                    </span>
-                  </div>
-                  <div style={{ height: 4, background: 'rgba(99,179,237,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${barW}%`, background: posColor, opacity: 0.5, borderRadius: 2 }} />
-                  </div>
-                </div>
-              );
-            })}
-            {rest.length > 0 && (
-              <details>
-                <summary style={{
-                  padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
-                  fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
-                }}>+ {rest.length} more pages</summary>
-                {rest.map((p, i) => (
-                  <div key={i} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
-                    gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
-                    color: C.muted, fontFamily: monoStack,
-                  }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
-                    <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
-                    <div style={{ textAlign: 'right' }}>{p.impressions}</div>
-                    <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
-                  </div>
-                ))}
-              </details>
-            )}
+              background: C.panel, border: `1px solid ${C.border}`,
+              borderRadius: 8, overflow: 'hidden',
+            }}>
+              <div style={{
+                fontSize: 10, color: C.green, textTransform: 'uppercase',
+                letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
+                borderBottom: `1px solid ${C.border}`,
+              }}>💰 Money Pages</div>
+              {moneyPages.length === 0 ? (
+                <div style={{ padding: '12px 14px', fontSize: 12, color: C.muted }}>No rental/service pages in GSC data yet.</div>
+              ) : (
+                <>
+                  {moneyPages.slice(0, 5).map((p, i) => renderPageRow(p, i, Math.min(moneyPages.length, 5)))}
+                  {moneyPages.length > 5 && (
+                    <details>
+                      <summary style={{
+                        padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
+                        fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
+                      }}>+ {moneyPages.length - 5} more</summary>
+                      {moneyPages.slice(5).map((p, i) => (
+                        <div key={i} style={{
+                          display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
+                          gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
+                          color: C.muted, fontFamily: monoStack,
+                        }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
+                          <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
+                          <div style={{ textAlign: 'right' }}>{p.impressions}</div>
+                          <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Resource Pages — informational (guides, blog, landfill) */}
+            <div style={{
+              background: C.panel, border: `1px solid ${C.border}`,
+              borderRadius: 8, overflow: 'hidden',
+            }}>
+              <div style={{
+                fontSize: 10, color: C.muted, textTransform: 'uppercase',
+                letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
+                borderBottom: `1px solid ${C.border}`,
+              }}>📄 Resource Pages</div>
+              {resourcePages.length === 0 ? (
+                <div style={{ padding: '12px 14px', fontSize: 12, color: C.muted }}>No guide/blog pages in GSC data yet.</div>
+              ) : (
+                <>
+                  {resourcePages.slice(0, 3).map((p, i) => renderPageRow(p, i, Math.min(resourcePages.length, 3)))}
+                  {resourcePages.length > 3 && (
+                    <details>
+                      <summary style={{
+                        padding: '8px 14px', cursor: 'pointer', userSelect: 'none',
+                        fontSize: 10, color: C.muted, fontWeight: 600, borderTop: `1px solid ${C.border}`,
+                      }}>+ {resourcePages.length - 3} more</summary>
+                      {resourcePages.slice(3).map((p, i) => (
+                        <div key={i} style={{
+                          display: 'grid', gridTemplateColumns: '1fr 50px 60px 50px',
+                          gap: 6, padding: '5px 14px', fontSize: 11, borderTop: `1px solid ${C.border}`,
+                          color: C.muted, fontFamily: monoStack,
+                        }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.path}</div>
+                          <div style={{ textAlign: 'right', color: p.clicks > 0 ? C.green : C.muted }}>{p.clicks}</div>
+                          <div style={{ textAlign: 'right' }}>{p.impressions}</div>
+                          <div style={{ textAlign: 'right', color: Number(p.position) <= 10 ? C.green : C.muted }}>{p.position}</div>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         );
       })()}
@@ -1972,8 +1863,10 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
           const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
           return p.impressions >= 50 && ctrNum < 1 && Number(p.position) <= 30;
         });
-        // Biggest ranking opportunity from queries
-        const bigOpp = opportunities[0];
+        // Biggest ranking opportunity — page 2+ queries with meaningful demand
+        const bigOpp = queries
+          .filter(q => Number(q.position) > 10 && q.impressions >= 10)
+          .sort((a, b) => b.impressions - a.impressions)[0];
 
         let tone, headline, action;
         const trendingUp = clickDelta != null && clickDelta > 0 && posImprovement != null && Number(posImprovement) > 0;
@@ -2023,32 +1916,6 @@ function SeoPanel({ seo, actions = [], onComplete, onDismiss, onSync }) {
               Optimize title/meta on <strong>{ctrOpp.path}</strong> ({fmtNum(ctrOpp.impressions)} impressions, {ctrOpp.ctr} CTR — better headline → more clicks at zero ranking cost).
             </span>
           );
-        }
-        // City expansion callout
-        const darlington = trackedResults.find(tk => tk.label === 'Darlington');
-        const hartsville = trackedResults.find(tk => tk.label === 'Hartsville');
-        const cityNotes = [];
-        if (darlington && !darlington.found) cityNotes.push('Darlington');
-        if (hartsville && !hartsville.found) cityNotes.push('Hartsville');
-        if (cityNotes.length > 0) {
-          actions.push(
-            <span key="cities">
-              <strong>{cityNotes.join(' and ')}</strong> not yet showing in GSC — publish dedicated landing pages or blog content targeting these cities to get indexed.
-            </span>
-          );
-        } else {
-          // Both found — report progress
-          const cityProgress = [darlington, hartsville].filter(tk => tk && tk.found);
-          if (cityProgress.length > 0) {
-            const parts = cityProgress.map(tk =>
-              `${tk.label} at pos ${tk.position.toFixed(1)} (page ${Math.ceil(tk.position / 10)})`
-            );
-            actions.push(
-              <span key="cities">
-                City expansion: <strong>{parts.join(', ')}</strong> — {cityProgress.some(tk => tk.position <= 20) ? 'gaining traction' : 'still building visibility'}.
-              </span>
-            );
-          }
         }
         action = actions.length === 0 ? null : (
           <span>
