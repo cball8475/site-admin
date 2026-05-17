@@ -358,6 +358,7 @@ function LeadsDashboard({flash}) {
   const [fStatus,setFStatus] = useState("all");
   const [fSource,setFSource] = useState("all");
   const [search,setSearch]   = useState("");
+  const [showSpam,setShowSpam] = useState(false);
 
   // Assignment modal
   const [assignLeadId,setAssignLeadId] = useState(null);
@@ -425,8 +426,12 @@ function LeadsDashboard({flash}) {
     } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
-  // Filtering
+  // Spam detection: robocalls hitting exactly the 38s threshold from CallRail
+  const isSpamLead = (l) => l.source === 'callrail' && l.call_duration === 38;
+
+  // Filtering (spam hidden by default)
   const filtered = leads.filter(l => {
+    if(!showSpam && isSpamLead(l)) return false;
     if(fScore!=="all" && l.score!==fScore) return false;
     if(fStatus!=="all" && l.status!==fStatus) return false;
     if(fSource!=="all" && l.source!==fSource) return false;
@@ -438,12 +443,14 @@ function LeadsDashboard({flash}) {
     return true;
   });
 
-  // Counts
-  const hotCount  = leads.filter(l=>l.score==="hot").length;
-  const warmCount = leads.filter(l=>l.score==="warm").length;
-  const coldCount = leads.filter(l=>l.score==="cold").length;
-  const newCount  = leads.filter(l=>l.status==="new").length;
-  const todayCount = leads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
+  // Counts (exclude spam from headline numbers)
+  const realLeads = leads.filter(l => !isSpamLead(l));
+  const spamCount = leads.length - realLeads.length;
+  const hotCount  = realLeads.filter(l=>l.score==="hot").length;
+  const warmCount = realLeads.filter(l=>l.score==="warm").length;
+  const coldCount = realLeads.filter(l=>l.score==="cold").length;
+  const newCount  = realLeads.filter(l=>l.status==="new").length;
+  const todayCount = realLeads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
 
   const operatorName = (id) => {
     if(!id) return "Unassigned";
@@ -524,6 +531,15 @@ function LeadsDashboard({flash}) {
                   </button>
                 ))}
               </div>
+              {spamCount>0&&(
+                <button onClick={()=>setShowSpam(s=>!s)}
+                  style={{...btnBase,width:"100%",justifyContent:"center",marginTop:4,padding:"0.2rem",fontSize:8,
+                    background:showSpam?"rgba(239,68,68,0.15)":"transparent",
+                    color:showSpam?"#fca5a5":"rgba(255,255,255,0.25)",
+                    border:`1px solid ${showSpam?"rgba(239,68,68,0.3)":"transparent"}`}}>
+                  {showSpam?`🚫 Hiding ${spamCount} spam`:`👻 ${spamCount} spam hidden`}
+                </button>
+              )}
             </div>
             {/* Lead rows */}
             <div style={{flex:1,overflowY:"auto"}}>
@@ -544,6 +560,7 @@ function LeadsDashboard({flash}) {
                             {statusLabel(lead.status)}
                           </span>
                           {lead.is_pilot_lead===1&&<span style={{fontSize:8,color:C.purple}}>🧪</span>}
+                          {isSpamLead(lead)&&<span style={{fontSize:8,color:"#ef4444",background:"rgba(239,68,68,0.15)",padding:"0px 4px",borderRadius:100}}>🚫 spam</span>}
                           <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",marginLeft:"auto"}}>#{lead.id}</span>
                         </div>
                         <div style={{fontSize:12,color:"#fff",fontWeight:600}}>{lead.name||"Anonymous"}</div>
@@ -673,7 +690,7 @@ function LeadsDashboard({flash}) {
               <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,flexDirection:"column",gap:"0.5rem"}}>
                 <div style={{fontSize:32}}>👈</div>
                 <div style={{fontSize:13}}>Select a lead to view details</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing{!showSpam&&spamCount>0?` · ${spamCount} spam hidden`:""}</div>
               </div>
             )}
           </div>
