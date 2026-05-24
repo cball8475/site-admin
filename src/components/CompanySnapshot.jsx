@@ -1751,54 +1751,74 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
               })}
             </div>
 
-            {/* CTR Optimization Targets — high impressions, low CTR, rankable position */}
+            {/* SEO Fix Tracker — manual list of recently-optimized queries, tracks ranking direction since fix date */}
+            {/* To add/remove: edit SEO_FIX_TRACKER array below. Each entry: { query, page, startDate (ISO), startPos } */}
             {(() => {
-              const ctrTargets = allPages
-                .filter(p => {
-                  const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
-                  return p.impressions >= 30 && ctrNum < 2 && Number(p.position) <= 30;
-                })
-                .sort((a, b) => b.impressions - a.impressions)
-                .slice(0, 5);
-              if (ctrTargets.length === 0) return null;
+              const SEO_FIX_TRACKER = [
+                { query: 'dumpster rental Florence SC', page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-23', startPos: 37.1 },
+                { query: 'darlington county dump sites', page: '/darlington-county-landfill-guide.html', startDate: '2026-05-24', startPos: 10.4 },
+                { query: '30 yard dumpster rental',     page: '/dumpster-rental-florence-sc.html',  startDate: '2026-05-24', startPos: 6.2  },
+                { query: 'how much to rent a dumpster', page: '/pricing.html',                       startDate: '2026-05-24', startPos: 17.0 },
+              ];
+
+              const daysSince = (iso) => {
+                const ms = Date.now() - new Date(iso + 'T00:00:00').getTime();
+                return Math.max(0, Math.floor(ms / 86400000));
+              };
+              const fmtAge = (d) => d === 0 ? 'today' : d === 1 ? '1d' : `${d}d`;
+
               return (
                 <div style={{
                   background: C.panel, border: `1px solid ${C.border}`,
                   borderRadius: 8, overflow: 'hidden', marginBottom: 12,
                 }}>
                   <div style={{
-                    fontSize: 10, color: C.amber, textTransform: 'uppercase',
+                    fontSize: 10, color: C.blue, textTransform: 'uppercase',
                     letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
                     borderBottom: `1px solid ${C.border}`,
-                  }}>⚡ CTR Optimization Targets</div>
+                  }}>🎯 SEO Fix Tracker — Active Pushes</div>
                   <div style={{ padding: '8px 14px 4px', fontSize: 10, color: C.faint, lineHeight: 1.4 }}>
-                    Pages with impressions but low click-through — rewrite title/meta for free traffic gains
+                    Direction of each optimized query since the fix shipped. Lower position = better. Re-indexing takes 1–3 weeks.
                   </div>
-                  {ctrTargets.map((p, i) => {
-                    const pos = Number(p.position);
-                    const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
-                    const potentialClicks = Math.round(p.impressions * 0.03) - p.clicks; // 3% target CTR
+                  {SEO_FIX_TRACKER.map((fix, i) => {
+                    const match = queries.find(q => (q.query || '').toLowerCase() === fix.query.toLowerCase());
+                    const currentPos = match ? Number(match.position) : null;
+                    const startPos = Number(fix.startPos);
+                    const delta = (currentPos != null && !isNaN(startPos)) ? (startPos - currentPos) : null; // positive = improved
+                    const age = daysSince(fix.startDate);
+
+                    let arrow, color, label;
+                    if (currentPos == null) {
+                      arrow = '⏱'; color = C.muted; label = 'awaiting data';
+                    } else if (delta > 0.5) {
+                      arrow = '▲'; color = C.green; label = `+${delta.toFixed(1)} better`;
+                    } else if (delta < -0.5) {
+                      arrow = '▼'; color = C.red; label = `${delta.toFixed(1)} worse`;
+                    } else {
+                      arrow = '→'; color = C.muted; label = 'no change';
+                    }
+
                     return (
                       <div key={i} style={{
-                        padding: '8px 14px',
-                        borderBottom: i < ctrTargets.length - 1 ? `1px solid ${C.border}` : 'none',
+                        padding: '10px 14px',
+                        borderBottom: i < SEO_FIX_TRACKER.length - 1 ? `1px solid ${C.border}` : 'none',
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                           <span style={{
-                            fontSize: 11.5, color: C.text, fontFamily: monoStack,
+                            fontSize: 12, color: C.text, fontWeight: 600,
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-                          }}>{p.path}</span>
+                          }}>"{fix.query}"</span>
+                          <span style={{ fontSize: 16, color, lineHeight: 1, flexShrink: 0 }}>{arrow}</span>
+                          <span style={{ fontSize: 10, color, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', flexShrink: 0 }}>{label}</span>
                         </div>
                         <div style={{
                           fontSize: 10, color: C.muted, fontFamily: monoStack,
-                          display: 'flex', gap: 12,
+                          display: 'flex', gap: 12, flexWrap: 'wrap',
                         }}>
-                          <span>Pos <strong style={{ color: pos <= 10 ? C.green : C.amber }}>{pos.toFixed(0)}</strong></span>
-                          <span>{fmtNum(p.impressions)} impr</span>
-                          <span style={{ color: C.red }}>{p.ctr} CTR</span>
-                          {potentialClicks > 0 && (
-                            <span style={{ color: C.green }}>+{potentialClicks} clicks at 3%</span>
-                          )}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>{fix.page}</span>
+                          <span>Start: <strong style={{ color: C.text }}>{startPos.toFixed(1)}</strong> ({fmtAge(age)} ago)</span>
+                          <span>Now: <strong style={{ color }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+                          {match && <span>{match.impressions}imp · {match.clicks}clk</span>}
                         </div>
                       </div>
                     );
