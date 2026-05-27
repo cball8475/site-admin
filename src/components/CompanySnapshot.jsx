@@ -12,8 +12,8 @@ import {
 } from 'recharts';
 import FinancialsPanel from './FinancialsPanel';
 
-const API_BASE = import.meta.env.VITE_CRM_API_URL || '';
-const API_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || '';
+const API_BASE = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_CRM_API_URL || '');
+const API_TOKEN = import.meta.env.PROD ? '' : (import.meta.env.VITE_CRM_API_TOKEN || '');
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const C = {
