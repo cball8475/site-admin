@@ -1756,7 +1756,6 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
             {(() => {
               const SEO_FIX_TRACKER = [
                 { query: 'dumpster rental Florence SC', page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-23', startPos: 37.1 },
-                { query: 'darlington county dump sites', page: '/darlington-county-landfill-guide.html', startDate: '2026-05-24', startPos: 10.4 },
                 { query: '30 yard dumpster rental',     page: '/dumpster-rental-florence-sc.html',  startDate: '2026-05-24', startPos: 6.2  },
                 { query: 'how much to rent a dumpster', page: '/pricing.html',                       startDate: '2026-05-24', startPos: 17.0 },
               ];
