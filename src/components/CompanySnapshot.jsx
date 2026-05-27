@@ -1787,37 +1787,96 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                     const delta = (currentPos != null && !isNaN(startPos)) ? (startPos - currentPos) : null; // positive = improved
                     const age = daysSince(fix.startDate);
 
-                    let arrow, color, label;
+                    let statusColor;
                     if (currentPos == null) {
-                      arrow = '⏱'; color = C.muted; label = 'awaiting data';
+                      statusColor = C.muted;
                     } else if (delta > 0.5) {
-                      arrow = '▲'; color = C.green; label = `+${delta.toFixed(1)} better`;
+                      statusColor = C.green;
                     } else if (delta < -0.5) {
-                      arrow = '▼'; color = C.red; label = `${delta.toFixed(1)} worse`;
+                      statusColor = C.red;
                     } else {
-                      arrow = '→'; color = C.muted; label = 'no change';
+                      statusColor = C.muted;
                     }
+
+                    // ── Mini position track chart ──────────────────────────────
+                    // Scale: position 50 (far left / worst) → position 1 (far right / best)
+                    // Page 1 zone = positions 1–10 (right-hand green band)
+                    const CHART_W = 140, CHART_H = 28;
+                    const TRACK_PADDING = 10;
+                    const SCALE_MIN = 1, SCALE_MAX = 50;
+                    const toX = (pos) => {
+                      const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, pos));
+                      // map so pos=50 → left, pos=1 → right
+                      return ((SCALE_MAX - clamped) / (SCALE_MAX - SCALE_MIN)) * (CHART_W - TRACK_PADDING * 2) + TRACK_PADDING;
+                    };
+                    const p1X = toX(10); // x-position of page-1 threshold
+                    const startX = toX(startPos);
+                    const nowX = currentPos != null ? toX(currentPos) : null;
+                    const midY = CHART_H / 2;
 
                     return (
                       <div key={i} style={{
                         padding: '10px 14px',
                         borderBottom: i < SEO_FIX_TRACKER.length - 1 ? `1px solid ${C.border}` : 'none',
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        {/* Query name row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                           <span style={{
                             fontSize: 12, color: C.text, fontWeight: 600,
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
                           }}>"{fix.query}"</span>
-                          <span style={{ fontSize: 16, color, lineHeight: 1, flexShrink: 0 }}>{arrow}</span>
-                          <span style={{ fontSize: 10, color, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', flexShrink: 0 }}>{label}</span>
+                          {/* Status chip */}
+                          {currentPos == null ? (
+                            <span style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
+                              ⏱ Awaiting data
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 10, color: statusColor, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
+                              {delta > 0.5 ? `▲ +${delta.toFixed(1)}` : delta < -0.5 ? `▼ ${delta.toFixed(1)}` : '→ No change'}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Mini position track chart */}
+                        <svg width={CHART_W} height={CHART_H} style={{ display: 'block', marginBottom: 4, overflow: 'visible' }}>
+                          {/* Background track */}
+                          <rect x={TRACK_PADDING} y={midY - 2} width={CHART_W - TRACK_PADDING * 2} height={4} rx={2}
+                            fill="rgba(99,179,237,0.08)" stroke="rgba(99,179,237,0.12)" strokeWidth={0.5} />
+                          {/* Page 1 zone (positions 1–10, right side) */}
+                          <rect x={p1X} y={midY - 2} width={CHART_W - TRACK_PADDING - p1X} height={4} rx={2}
+                            fill="rgba(34,197,94,0.18)" />
+                          {/* Page 1 boundary tick */}
+                          <line x1={p1X} y1={midY - 7} x2={p1X} y2={midY + 7}
+                            stroke="rgba(34,197,94,0.35)" strokeWidth={1} strokeDasharray="2,2" />
+                          {/* "P1" label */}
+                          <text x={p1X} y={CHART_H - 1} textAnchor="middle"
+                            fontSize={7} fill="rgba(34,197,94,0.45)" fontFamily={monoStack}>P1</text>
+                          {/* Journey line (only when we have current data) */}
+                          {nowX != null && (
+                            <line x1={startX} y1={midY} x2={nowX} y2={midY}
+                              stroke={statusColor} strokeWidth={1.5} opacity={0.7} />
+                          )}
+                          {/* Start position dot */}
+                          <circle cx={startX} cy={midY} r={3.5}
+                            fill="rgba(200,223,240,0.15)" stroke="rgba(200,223,240,0.35)" strokeWidth={1} />
+                          {/* Current position dot */}
+                          {nowX != null && (
+                            <circle cx={nowX} cy={midY} r={5}
+                              fill={statusColor} stroke={`${statusColor}55`} strokeWidth={2} />
+                          )}
+                          {/* "50" label (worst end) */}
+                          <text x={TRACK_PADDING} y={CHART_H - 1} textAnchor="middle"
+                            fontSize={7} fill="rgba(200,223,240,0.2)" fontFamily={monoStack}>50</text>
+                        </svg>
+
+                        {/* Stats row */}
                         <div style={{
                           fontSize: 10, color: C.muted, fontFamily: monoStack,
-                          display: 'flex', gap: 12, flexWrap: 'wrap',
+                          display: 'flex', gap: 10, flexWrap: 'wrap',
                         }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>{fix.page}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>{fix.page}</span>
                           <span>Start: <strong style={{ color: C.text }}>{startPos.toFixed(1)}</strong> ({fmtAge(age)} ago)</span>
-                          <span>Now: <strong style={{ color }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+                          <span>Now: <strong style={{ color: statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
                           {match && <span>{match.impressions}imp · {match.clicks}clk</span>}
                         </div>
                       </div>
