@@ -924,11 +924,18 @@ function BuyerCRM({flash}) {
     if (googleKey.trim()) {
       try {
         // Use vertical-appropriate keyword for Google Places search
-        const keyword = activeVertical === "hauling" ? "junk removal service" : "dumpster rental";
+        const keyword = activeVertical === "hauling" ? "junk removal hauling cleanout" : "dumpster rental";
         const results = await searchGooglePlaces(keyword,"Florence SC", googleKey.trim());
         if (results.length === 0) throw new Error("No results returned");
+        const dumpsterWords = /dumpster|roll.off|container|bin|waste.*system/i;
+        const haulingWords = /junk|haul|cleanout|clean.out|removal|moving|labor/i;
+        const filtered = activeVertical === "hauling"
+          ? results.filter(r => !dumpsterWords.test(r.name))
+          : activeVertical === "dumpster"
+            ? results.filter(r => !haulingWords.test(r.name) || dumpsterWords.test(r.name))
+            : results;
         const existingIds = new Set(prospects.map(p=>p.place_id));
-        const newResults = results.filter(r=>!existingIds.has(r.place_id));
+        const newResults = filtered.filter(r=>!existingIds.has(r.place_id));
         // Add each new result to D1 with current vertical
         for (const r of newResults) {
           try {
@@ -950,8 +957,8 @@ function BuyerCRM({flash}) {
         await loadCRMData();
         setLoading(false);
         flash(newResults.length > 0
-          ? `Found ${results.length} companies, ${newResults.length} new added ✅`
-          : `Found ${results.length} companies but all already in your prospect list`);
+          ? `"${keyword}" → ${results.length} found, ${newResults.length} new added ✅`
+          : `"${keyword}" → ${results.length} found, 0 new (all already in prospect list)`);
         return;
       } catch(e) {
         flash(`Places API error: ${e.message}`, "error");
