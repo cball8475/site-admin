@@ -2,11 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import CompanySnapshot from "./components/CompanySnapshot";
 
 // ══════════════════════════════════════════════════════════════
-// ENV — injected by Netlify at build time
+// ENV — token stays server-side. In prod, calls go same-origin
+// through the dashboard-proxy worker, which attaches the bearer.
+// Dev still uses local env vars for direct API access.
 // ══════════════════════════════════════════════════════════════
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
-const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL   || "";
-const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
+const ENV_CRM_URL   = import.meta.env.PROD ? "/api" : (import.meta.env.VITE_CRM_API_URL || "");
+const ENV_CRM_TOKEN = import.meta.env.PROD ? "" : (import.meta.env.VITE_CRM_API_TOKEN || "");
 
 // ══════════════════════════════════════════════════════════════
 // LOCALSTORAGE — fast cache only
@@ -18,10 +20,9 @@ function lsSet(key, val)  { try { localStorage.setItem(key, JSON.stringify(val))
 // CRM API CLIENT (D1-backed)
 // ══════════════════════════════════════════════════════════════
 async function crmFetch(url, token, path, method = "GET", body = null) {
-  const opts = {
-    method,
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-  };
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${url}${path}`, opts);
   if (!res.ok) {
@@ -95,7 +96,7 @@ const btnBase = { display:"inline-flex", alignItems:"center", gap:"0.4rem", bord
 // ══════════════════════════════════════════════════════════════
 const VERTICALS = [
   { id: "dumpster", label: "Dumpster Rental", color: C.blue,  icon: "🗑" },
-  { id: "tree",     label: "Tree Cutting & Cleanout", color: C.green, icon: "🌳" },
+  { id: "hauling",  label: "Junk Removal & Hauling", color: C.green, icon: "🚛" },
 ];
 
 // Helper: vertical config by id
@@ -202,67 +203,67 @@ const SEQUENCES = [
     ]
   },
 
-  // ── TREE CUTTING & CLEANOUT ──────────────────────────────────
+  // ── JUNK REMOVAL & HAULING ───────────────────────────────────
   {
-    id: "tree_new_prospect",
-    vertical: "tree",
-    name: "New Prospect — Tree (5 Touch)",
-    description: "Full intro sequence for tree cutting & cleanout operators",
+    id: "hauling_new_prospect",
+    vertical: "hauling",
+    name: "New Prospect — Hauling (5 Touch)",
+    description: "Full intro sequence for junk removal & hauling operators",
     steps: [
       { day: 0, type: "email", label: "Intro Email",
-        subject: "Partner with Florence SC Services — Tree Removal Leads",
-        template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and property managers in the Pee Dee region with local tree cutting and land cleanout providers.\n\nWe're getting steady inquiries from people who need tree removal, stump grinding, and cleanout work, and I'm looking for a reliable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
+        subject: "Partner with Florence SC Services — Junk Removal Leads",
+        template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and property managers in the Pee Dee region with local junk removal and hauling providers.\n\nWe're getting steady inquiries from people who need junk removal, cleanouts, and hauling work, and I'm looking for a reliable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
       },
       { day: 2, type: "email", label: "Follow-up Email",
-        subject: "Quick follow-up — tree removal leads in your area",
-        template: `Hi {{firstName}},\n\nJust circling back on my note from a couple days ago. We have customers actively searching for tree removal and cleanout services in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "Quick follow-up — junk removal leads in your area",
+        template: `Hi {{firstName}},\n\nJust circling back on my note from a couple days ago. We have customers actively searching for junk removal and hauling services in your area.\n\nOur model is simple — we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Cold Call",
-        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending tree removal leads your way. Wanted to connect real quick — do you have a minute?\n\n[IF YES] Great — so we generate leads for tree removal and cleanout services in the Pee Dee region. We partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask — are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending junk removal leads your way. Wanted to connect real quick — do you have a minute?\n\n[IF YES] Great — so we generate leads for junk removal and hauling services in the Pee Dee region. We partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask — are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
       },
       { day: 8, type: "email", label: "Value Prop Email",
-        subject: "How {{company}} can get more tree jobs without ads",
-        template: `Hi {{firstName}},\n\nMost tree service companies in Florence rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently — we rank organically for "tree removal Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+        subject: "How {{company}} can get more hauling jobs without ads",
+        template: `Hi {{firstName}},\n\nMost junk removal companies around here rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently — we rank organically for "junk removal" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
       },
       { day: 12, type: "email", label: "Final Email",
         subject: "Last note from me — {{company}}",
-        template: `Hi {{firstName}},\n\nI've reached out a few times about sending tree removal leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
+        template: `Hi {{firstName}},\n\nI've reached out a few times about sending junk removal leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
       },
     ]
   },
   {
-    id: "tree_re_engage",
-    vertical: "tree",
-    name: "Re-engage — Tree (Dead Leads)",
-    description: "Wake up tree service prospects who went cold. 3 touches over 2 weeks.",
+    id: "hauling_re_engage",
+    vertical: "hauling",
+    name: "Re-engage — Hauling (Dead Leads)",
+    description: "Wake up junk removal prospects who went cold. 3 touches over 2 weeks.",
     steps: [
       { day: 0, type: "email", label: "Check-in Email",
-        subject: "Still sending tree removal leads in Florence — room for one more partner",
-        template: `Hi {{firstName}},\n\nWe connected a while back about sending tree removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "Still sending junk removal leads in your area — room for one more partner",
+        template: `Hi {{firstName}},\n\nWe connected a while back about sending junk removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Quick Call",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about tree removal leads — just wanted to see if timing is better now. We've got more volume and room for one more partner. Quick 2-minute call worth it?`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about junk removal leads — just wanted to see if timing is better now. We've got more volume and room for one more partner. Quick 2-minute call worth it?`
       },
       { day: 12, type: "sms", label: "Final Text",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have tree removal leads if you want to test it out — 2 free, no strings. Just reply YES and I'll send them your way.`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have junk removal leads if you want to test it out — 2 free, no strings. Just reply YES and I'll send them your way.`
       },
     ]
   },
   {
-    id: "tree_pilot_followup",
-    vertical: "tree",
-    name: "Pilot Follow-up — Tree",
-    description: "After sending free tree removal leads — convert to paid.",
+    id: "hauling_pilot_followup",
+    vertical: "hauling",
+    name: "Pilot Follow-up — Hauling",
+    description: "After sending free junk removal leads — convert to paid.",
     steps: [
       { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those tree removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works — we send you exclusive tree removal and cleanout leads per month for your area. Pricing starts at $297/month. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries — sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+        template: `Hey {{firstName}}, Charlie here. Just checking in on those junk removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works — we send you exclusive junk removal and hauling leads per month for your area. Pricing starts at $297/month. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries — sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
       },
       { day: 3, type: "email", label: "Pilot Results + Offer",
         subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot tree removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\n• Exclusive leads for your area — no sharing with competitors\n• $297/mo Starter or $397/mo Growth plan\n• You're the only tree service partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+        template: `Hi {{firstName}},\n\nHope the pilot junk removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\n• Exclusive leads for your area — no sharing with competitors\n• $297/mo Starter or $397/mo Growth plan\n• You're the only hauling partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
-        template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another tree service operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
+        template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another hauling operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
       },
     ]
   },
@@ -283,9 +284,9 @@ function fillTemplate(template, biz) {
 // vertical-aware prompts
 // ══════════════════════════════════════════════════════════════
 async function generateOutreach(biz, type) {
-  const isTree = (biz.vertical || "dumpster") === "tree";
-  const service = isTree ? "tree removal and land cleanout" : "dumpster rental";
-  const niche   = isTree ? "tree service" : "dumpster rental";
+  const isHauling = (biz.vertical || "dumpster") === "hauling";
+  const service = isHauling ? "junk removal and hauling" : "dumpster rental";
+  const niche   = isHauling ? "junk removal" : "dumpster rental";
   const prompts={
     email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. We offer 2 FREE exclusive leads as a pilot, no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
     coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). We offer 2 free exclusive leads, pilot program, one partner per area. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
@@ -358,7 +359,6 @@ function LeadsDashboard({flash}) {
   const [fStatus,setFStatus] = useState("all");
   const [fSource,setFSource] = useState("all");
   const [search,setSearch]   = useState("");
-  const [showSpam,setShowSpam] = useState(false);
 
   // Assignment modal
   const [assignLeadId,setAssignLeadId] = useState(null);
@@ -426,12 +426,8 @@ function LeadsDashboard({flash}) {
     } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
-  // Spam detection: robocalls hitting exactly the 38s threshold from CallRail
-  const isSpamLead = (l) => l.source === 'callrail' && l.call_duration === 38;
-
-  // Filtering (spam hidden by default)
+  // Filtering
   const filtered = leads.filter(l => {
-    if(!showSpam && isSpamLead(l)) return false;
     if(fScore!=="all" && l.score!==fScore) return false;
     if(fStatus!=="all" && l.status!==fStatus) return false;
     if(fSource!=="all" && l.source!==fSource) return false;
@@ -443,14 +439,12 @@ function LeadsDashboard({flash}) {
     return true;
   });
 
-  // Counts (exclude spam from headline numbers)
-  const realLeads = leads.filter(l => !isSpamLead(l));
-  const spamCount = leads.length - realLeads.length;
-  const hotCount  = realLeads.filter(l=>l.score==="hot").length;
-  const warmCount = realLeads.filter(l=>l.score==="warm").length;
-  const coldCount = realLeads.filter(l=>l.score==="cold").length;
-  const newCount  = realLeads.filter(l=>l.status==="new").length;
-  const todayCount = realLeads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
+  // Counts
+  const hotCount  = leads.filter(l=>l.score==="hot").length;
+  const warmCount = leads.filter(l=>l.score==="warm").length;
+  const coldCount = leads.filter(l=>l.score==="cold").length;
+  const newCount  = leads.filter(l=>l.status==="new").length;
+  const todayCount = leads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
 
   const operatorName = (id) => {
     if(!id) return "Unassigned";
@@ -531,15 +525,6 @@ function LeadsDashboard({flash}) {
                   </button>
                 ))}
               </div>
-              {spamCount>0&&(
-                <button onClick={()=>setShowSpam(s=>!s)}
-                  style={{...btnBase,width:"100%",justifyContent:"center",marginTop:4,padding:"0.2rem",fontSize:8,
-                    background:showSpam?"rgba(239,68,68,0.15)":"transparent",
-                    color:showSpam?"#fca5a5":"rgba(255,255,255,0.25)",
-                    border:`1px solid ${showSpam?"rgba(239,68,68,0.3)":"transparent"}`}}>
-                  {showSpam?`🚫 Hiding ${spamCount} spam`:`👻 ${spamCount} spam hidden`}
-                </button>
-              )}
             </div>
             {/* Lead rows */}
             <div style={{flex:1,overflowY:"auto"}}>
@@ -560,7 +545,6 @@ function LeadsDashboard({flash}) {
                             {statusLabel(lead.status)}
                           </span>
                           {lead.is_pilot_lead===1&&<span style={{fontSize:8,color:C.purple}}>🧪</span>}
-                          {isSpamLead(lead)&&<span style={{fontSize:8,color:"#ef4444",background:"rgba(239,68,68,0.15)",padding:"0px 4px",borderRadius:100}}>🚫 spam</span>}
                           <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",marginLeft:"auto"}}>#{lead.id}</span>
                         </div>
                         <div style={{fontSize:12,color:"#fff",fontWeight:600}}>{lead.name||"Anonymous"}</div>
@@ -690,7 +674,7 @@ function LeadsDashboard({flash}) {
               <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,flexDirection:"column",gap:"0.5rem"}}>
                 <div style={{fontSize:32}}>👈</div>
                 <div style={{fontSize:13}}>Select a lead to view details</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing{!showSpam&&spamCount>0?` · ${spamCount} spam hidden`:""}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing</div>
               </div>
             )}
           </div>
@@ -940,7 +924,7 @@ function BuyerCRM({flash}) {
     if (googleKey.trim()) {
       try {
         // Use vertical-appropriate keyword for Google Places search
-        const keyword = activeVertical === "tree" ? "tree removal service" : "dumpster rental";
+        const keyword = activeVertical === "hauling" ? "junk removal service" : "dumpster rental";
         const results = await searchGooglePlaces(keyword,"Florence SC", googleKey.trim());
         if (results.length === 0) throw new Error("No results returned");
         const existingIds = new Set(prospects.map(p=>p.place_id));
