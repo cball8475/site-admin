@@ -927,7 +927,8 @@ function BuyerCRM({flash}) {
         const keyword = activeVertical === "hauling" ? "junk removal service" : "dumpster rental";
         const results = await searchGooglePlaces(keyword,"Florence SC", googleKey.trim());
         if (results.length === 0) throw new Error("No results returned");
-        const existingIds = new Set(prospects.map(p=>p.place_id));
+        const searchVertical = activeVertical === "all" ? "dumpster" : activeVertical;
+        const existingIds = new Set(prospects.filter(p => (p.vertical || "dumpster") === searchVertical).map(p=>p.place_id));
         const newResults = results.filter(r=>!existingIds.has(r.place_id));
         // Add each new result to D1 with current vertical
         for (const r of newResults) {
