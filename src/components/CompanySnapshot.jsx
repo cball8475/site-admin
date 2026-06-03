@@ -1755,9 +1755,14 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
             {/* To add/remove: edit SEO_FIX_TRACKER array below. Each entry: { query, page, startDate (ISO), startPos } */}
             {(() => {
               const SEO_FIX_TRACKER = [
-                { query: 'dumpster rental Florence SC', page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-23', startPos: 37.1 },
-                { query: '30 yard dumpster rental',     page: '/dumpster-rental-florence-sc.html',  startDate: '2026-05-24', startPos: 6.2  },
-                { query: 'how much to rent a dumpster', page: '/pricing.html',                       startDate: '2026-05-24', startPos: 17.0 },
+                // Baseline positions captured at time of on-page optimization. Lower = better.
+                // Update startPos if re-optimized. Add new entries as new pages are pushed.
+                { query: 'dumpster rental florence sc',   page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-23', startPos: 37.1 },
+                { query: '30 yard dumpster rental',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-24', startPos: 6.2  },
+                { query: 'how much to rent a dumpster',   page: '/pricing.html',                      startDate: '2026-05-24', startPos: 17.0 },
+                { query: 'dumpster rental near me',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 5.3  },
+                { query: 'commercial dumpster rental',    page: '/construction-dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 6.6  },
+                { query: '40 yard dumpster rental',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 3.4  },
               ];
 
               const daysSince = (iso) => {
