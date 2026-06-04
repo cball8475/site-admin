@@ -1,5 +1,5 @@
 // CompanySnapshot.jsx — comprehensive FSC business snapshot
-// Pulls from florence-crm-api (v2.11.0+):
+// Pulls from florence-crm-api:
 //   /stats, /leads/analytics, /ads/metrics, /seo/metrics, /prospects
 // Each section is independent — one source failing won't crash the whole tile.
 //
@@ -545,7 +545,7 @@ export default function CompanySnapshot() {
       >
         {errors.financials ? (
           errors.financials.includes('404') || errors.financials.includes('Not found') ? (
-            <PendingPanel message="Financials endpoint requires CRM API v2.15.0." />
+            <PendingPanel message="No financial snapshots recorded yet." />
           ) : (
             <ErrorBanner section="Financials" error={errors.financials} />
           )
@@ -573,7 +573,7 @@ export default function CompanySnapshot() {
       >
         {errors.searchTerms ? (
           errors.searchTerms.includes('404') || errors.searchTerms.includes('Not found') ? (
-            <PendingPanel message="Search Terms endpoint requires CRM API v2.14.0." />
+            <PendingPanel message="Search terms — coming soon." />
           ) : (
             <ErrorBanner section="Search Terms" error={errors.searchTerms} />
           )
@@ -589,7 +589,7 @@ export default function CompanySnapshot() {
       >
         {errors.competitors ? (
           errors.competitors.includes('404') || errors.competitors.includes('Not found') ? (
-            <PendingPanel message="Competitor endpoint not yet deployed — deploy worker v2.11.2 to enable." />
+            <PendingPanel message="Competitive landscape — coming soon." />
           ) : (
             <ErrorBanner section="Competitors" error={errors.competitors} />
           )
@@ -605,7 +605,7 @@ export default function CompanySnapshot() {
       >
         {errors.seo ? (
           errors.seo.includes('404') || errors.seo.includes('Not found') ? (
-            <PendingPanel message="SEO endpoint not yet deployed — deploy worker v2.11.0 to enable." />
+            <PendingPanel message="SEO data unavailable — check API connection." />
           ) : (
             <ErrorBanner section="SEO" error={errors.seo} />
           )
@@ -621,7 +621,7 @@ export default function CompanySnapshot() {
       >
         {errors.backlinks ? (
           errors.backlinks.includes('404') || errors.backlinks.includes('Not found') ? (
-            <PendingPanel message="Backlinks endpoint not yet deployed — deploy worker v2.11.3 to enable." />
+            <PendingPanel message="Backlinks — coming soon." />
           ) : (
             <ErrorBanner section="Backlinks" error={errors.backlinks} />
           )
@@ -667,6 +667,7 @@ function OperatorPanel({ operators, stats }) {
         const daysIn = trialStart ? daysBetween(trialStart.slice(0, 10), today) : null;
         const trialLength = 60;
         const daysRemaining = daysIn != null ? Math.max(0, trialLength - daysIn) : null;
+        const overdue = daysIn != null && daysIn > trialLength;
         const pct = daysIn != null ? Math.min(100, (daysIn / trialLength) * 100) : 0;
 
         return (
@@ -703,8 +704,10 @@ function OperatorPanel({ operators, stats }) {
                   display: 'flex', justifyContent: 'space-between', fontSize: 11,
                   color: C.muted, fontFamily: monoStack, marginBottom: 4,
                 }}>
-                  <span>Day {daysIn} of {trialLength}</span>
-                  <span>{daysRemaining}d remaining</span>
+                  <span>Day {Math.min(daysIn, trialLength)} of {trialLength}</span>
+                  <span style={overdue ? { color: C.amber } : undefined}>
+                    {overdue ? `Trial ended · ${daysIn - trialLength}d overdue` : `${daysRemaining}d remaining`}
+                  </span>
                 </div>
                 <div style={{
                   height: 6, background: 'rgba(56,189,248,0.08)', borderRadius: 3,
@@ -729,16 +732,21 @@ function OperatorPanel({ operators, stats }) {
 function PipelinePanel({ stats, leadsAnalytics }) {
   if (!stats) return null;
 
-  // Normalize stats arrays for display
-  const bySource = (leadsAnalytics?.by_source || stats.leads_by_source || []).map(r => ({
+  // Normalize stats arrays for display.
+  // Prefer the windowed analytics, but an empty array is truthy — so when the
+  // window has zero leads, fall back to the all-time /stats breakdown instead of
+  // showing "No data" next to a non-zero total-leads count.
+  const pick = (windowed, allTime) => (windowed && windowed.length ? windowed : (allTime || []));
+
+  const bySource = pick(leadsAnalytics?.by_source, stats.leads_by_source).map(r => ({
     label: r.source || 'unknown', value: r.c,
   })).sort((a, b) => b.value - a.value);
 
-  const byZone = (leadsAnalytics?.by_zone || stats.leads_by_zone || []).map(r => ({
+  const byZone = pick(leadsAnalytics?.by_zone, stats.leads_by_zone).map(r => ({
     label: r.zone ? `Zone ${r.zone}` : 'Unzoned', value: r.c,
   })).sort((a, b) => b.value - a.value);
 
-  const byOutcome = (leadsAnalytics?.by_outcome || stats.leads_by_outcome || []).map(r => ({
+  const byOutcome = pick(leadsAnalytics?.by_outcome, stats.leads_by_outcome).map(r => ({
     label: r.outcome || 'pending', value: r.c,
   })).sort((a, b) => b.value - a.value);
 
@@ -1592,8 +1600,32 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
 function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
-  const t = seo.current?.totals || {};
-  const p = seo.previous?.totals || {};
+  // Impression-weighted average position over rows that have both a position and impressions.
+  const wAvgPosition = (rows) => {
+    const r = (rows || []).filter(x => Number(x.position) > 0 && Number(x.impressions) > 0);
+    const wi = r.reduce((s, x) => s + Number(x.impressions), 0);
+    return wi > 0 ? r.reduce((s, x) => s + Number(x.position) * Number(x.impressions), 0) / wi : null;
+  };
+  // Derive period totals from the daily series + top queries — the same data the
+  // chart renders. The API sometimes returns daily/top_queries without a populated
+  // current.totals, which left every summary tile at 0/— next to a full chart.
+  const deriveTotals = (src) => {
+    if (!src) return {};
+    const ds = src.daily || [];
+    const clicks = ds.reduce((s, d) => s + (Number(d.clicks) || 0), 0);
+    const impressions = ds.reduce((s, d) => s + (Number(d.impressions) || 0), 0);
+    const position = wAvgPosition(ds) ?? wAvgPosition(src.top_queries);
+    return {
+      clicks, impressions,
+      ctr: impressions > 0 ? (clicks / impressions * 100).toFixed(1) + '%' : '0%',
+      position: position != null ? position.toFixed(1) : '',
+    };
+  };
+  const rawT = seo.current?.totals || seo.totals || {};
+  const rawP = seo.previous?.totals || {};
+  // Use API totals when present and non-zero, otherwise derive from daily data.
+  const t = (Number(rawT.clicks) || Number(rawT.impressions)) ? rawT : deriveTotals(seo);
+  const p = (Number(rawP.clicks) || Number(rawP.impressions)) ? rawP : deriveTotals(seoPrev);
   const queries = seo.top_queries || [];
 
   // Daily series for charting

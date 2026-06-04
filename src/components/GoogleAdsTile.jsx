@@ -8,8 +8,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts';
 
-const API_BASE = import.meta.env.VITE_CRM_API_URL || import.meta.env.VITE_API_BASE || '';
-const API_TOKEN = import.meta.env.VITE_API_TOKEN || '';
+const API_BASE = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_CRM_API_URL || import.meta.env.VITE_API_BASE || '');
+const API_TOKEN = import.meta.env.PROD ? '' : (import.meta.env.VITE_CRM_API_TOKEN || import.meta.env.VITE_API_TOKEN || '');
 
 // FSC target cities for Zone 1 + Zone 4 (current ad geo)
 const TARGET_CITIES = [
@@ -100,9 +100,8 @@ export default function GoogleAdsTile() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/ads/metrics?days=${days}`, {
-        headers: { 'Authorization': `Bearer ${API_TOKEN}` },
-      });
+      const headers = API_TOKEN ? { 'Authorization': `Bearer ${API_TOKEN}` } : {};
+      const res = await fetch(`${API_BASE}/ads/metrics?days=${days}`, { headers });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);

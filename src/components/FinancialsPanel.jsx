@@ -1,5 +1,5 @@
 // FinancialsPanel.jsx — FSC Financial snapshot tile
-// Pulls from /financials on florence-crm-api (v2.15.0+)
+// Pulls from /financials on florence-crm-api
 // Data source: Mercury MCP → D1 financials table
 
 import { useState, useEffect } from 'react';
