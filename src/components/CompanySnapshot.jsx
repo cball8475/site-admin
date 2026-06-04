@@ -601,7 +601,7 @@ export default function CompanySnapshot() {
       {/* ── SEO / GSC ──────────────────────────────────────────────────── */}
       <Section
         title="SEO — Search Console"
-        right={seo?.current_range ? `${fmtDate(seo.current_range.start)} → ${fmtDate(seo.current_range.end)}` : null}
+        right={(seo?.date_range || seo?.current_range) ? `${fmtDate((seo.date_range || seo.current_range).start)} → ${fmtDate((seo.date_range || seo.current_range).end)}` : null}
       >
         {errors.seo ? (
           errors.seo.includes('404') || errors.seo.includes('Not found') ? (
@@ -1600,32 +1600,22 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
 function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
-  // Impression-weighted average position over rows that have both a position and impressions.
-  const wAvgPosition = (rows) => {
-    const r = (rows || []).filter(x => Number(x.position) > 0 && Number(x.impressions) > 0);
-    const wi = r.reduce((s, x) => s + Number(x.impressions), 0);
-    return wi > 0 ? r.reduce((s, x) => s + Number(x.position) * Number(x.impressions), 0) / wi : null;
+  // The API returns flat { totals: {clicks, impressions, ctr, avg_position}, daily, top_queries, top_pages }.
+  // Normalize: read totals directly, map avg_position → position for display code.
+  const normalizeTotals = (raw) => {
+    if (!raw) return {};
+    return { ...raw, position: raw.position || raw.avg_position || '' };
   };
-  // Derive period totals from the daily series + top queries — the same data the
-  // chart renders. The API sometimes returns daily/top_queries without a populated
-  // current.totals, which left every summary tile at 0/— next to a full chart.
-  const deriveTotals = (src) => {
-    if (!src) return {};
-    const ds = src.daily || [];
-    const clicks = ds.reduce((s, d) => s + (Number(d.clicks) || 0), 0);
-    const impressions = ds.reduce((s, d) => s + (Number(d.impressions) || 0), 0);
-    const position = wAvgPosition(ds) ?? wAvgPosition(src.top_queries);
-    return {
-      clicks, impressions,
-      ctr: impressions > 0 ? (clicks / impressions * 100).toFixed(1) + '%' : '0%',
-      position: position != null ? position.toFixed(1) : '',
-    };
-  };
-  const rawT = seo.current?.totals || seo.totals || {};
-  const rawP = seo.previous?.totals || {};
-  // Use API totals when present and non-zero, otherwise derive from daily data.
-  const t = (Number(rawT.clicks) || Number(rawT.impressions)) ? rawT : deriveTotals(seo);
-  const p = (Number(rawP.clicks) || Number(rawP.impressions)) ? rawP : deriveTotals(seoPrev);
+  // Current period totals — API returns seo.totals (flat, no current/previous wrapper).
+  const t = normalizeTotals(seo.totals || {});
+  // Previous period: seoPrev fetches 2x window. Derive the prior-only half by subtracting current from 2x.
+  const pRaw = seoPrev?.totals || {};
+  const p = normalizeTotals(pRaw.clicks != null ? {
+    clicks: (Number(pRaw.clicks) || 0) - (Number(t.clicks) || 0),
+    impressions: (Number(pRaw.impressions) || 0) - (Number(t.impressions) || 0),
+    ctr: pRaw.ctr,
+    position: pRaw.position || pRaw.avg_position || '',
+  } : {});
   const queries = seo.top_queries || [];
 
   // Daily series for charting
@@ -1708,7 +1698,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
 
       {/* ── Money Page Movement — position delta on buying-intent pages ── */}
       {seo.top_pages && seo.top_pages.length > 0 && (() => {
-        const allPages = seo.top_pages.map(p => ({ ...p, type: classifyPage(p.path || p.page_url || '') }));
+        const allPages = seo.top_pages.map(p => ({ ...p, path: p.path || p.page || p.page_url || '', type: classifyPage(p.path || p.page || p.page_url || '') }));
         const moneyPages = allPages.filter(p => p.type === 'money').sort((a, b) => b.impressions - a.impressions);
         const resourcePages = allPages.filter(p => p.type === 'resource').sort((a, b) => b.impressions - a.impressions);
 
@@ -1716,7 +1706,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
         const prevMap = {};
         if (seoPrev?.top_pages) {
           seoPrev.top_pages.forEach(p => {
-            const path = p.path || p.page_url || '';
+            const path = p.path || p.page || p.page_url || '';
             prevMap[path] = Number(p.position);
           });
         }
