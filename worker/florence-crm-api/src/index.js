@@ -326,13 +326,20 @@ function detectServiceFromText(text) {
 }
 __name(detectServiceFromText, "detectServiceFromText");
 function extractCallRailFields(body) {
-  // Service / project type
-  let service = pickFirst(body.project_type, body.service, body.service_type);
+  // Voice Assist captures the caller's intake in a structured object — this is
+  // the authoritative source. Prefer it; fall back to tags/summary text scans.
+  const va = body.voice_assist_message || {};
+  const vc = va.ordered_content_with_overrides || va.contents || {};
+  const summaryText = [vc.purpose, body.note, body.call_summary, body.summary, body.transcription, body.lead_explanation]
+    .filter(Boolean).join(" ");
+
+  // Service / project type — structured field first.
+  let service = pickFirst(vc.product_service_interest, body.project_type, body.service, body.service_type);
   if (!service && Array.isArray(body.tags) && body.tags.length) service = detectServiceFromText(body.tags.join(" "));
   if (!service && typeof body.tags === "string") service = detectServiceFromText(body.tags);
   if (!service) {
     service = detectServiceFromText(pickFirst(
-      body.lead_status, body.keywords, body.note, body.call_summary,
+      vc.purpose, body.lead_status, body.keywords, body.note, body.call_summary,
       body.summary, body.call_highlights, body.transcription, body.qualified_lead
     ));
   }
@@ -341,25 +348,36 @@ function extractCallRailFields(body) {
     service = pickFirst(custom.project_type, custom.service, custom.service_type, custom.what_service)
       || detectServiceFromText(Object.values(custom).join(" "));
   }
-  // Location / ZIP — geo-routing & Voice Assist write the caller-entered ZIP
-  // to zip_code (may be a single value or an array of entered zips).
-  let zip = pickFirst(body.zip_code, body.zip, body.postal_code, body.customer_postal_code);
+  // Location / ZIP — structured fields, then scan VA intake + call summary text.
+  // (The documented zip_code field is often empty for Voice Assist calls.)
+  let zip = pickFirst(body.zip_code, body.zip, body.postal_code, body.customer_postal_code, vc.zip_code, vc.zip);
   if (Array.isArray(zip)) zip = zip.length ? zip[0] : null;
   if (!zip && custom && typeof custom === "object") {
     zip = pickFirst(custom.zip_code, custom.zip, custom.postal_code);
   }
-  if (!zip) {
-    const text = [body.note, body.call_summary, body.summary, body.transcription, body.keywords]
-      .filter(Boolean).join(" ");
-    const m = text.match(/\b(2[5-9]\d{3})\b/); // SC / Pee Dee ZIPs are 29xxx-ish
+  if (!zip && summaryText) {
+    const m = summaryText.match(/\b(2[5-9]\d{3})\b/); // SC / Pee Dee ZIPs are 29xxx-ish
     if (m) zip = m[1];
   }
-  const city = pickFirst(body.customer_city, body.caller_city, body.city);
+  const city = pickFirst(body.customer_city, body.callercity, body.caller_city, body.city);
+  // Size + rental duration — derived from the intake/summary by pattern, not by
+  // positional custom-question order (which varies per call flow).
+  const sizeSrc = [vc.product_service_interest, vc.purpose, vc.custom_question_1, vc.custom_question_2, body.call_summary]
+    .filter(Boolean).join(" ");
+  const sizeMatch = sizeSrc.match(/(\d{1,2})\s*(?:-|\s)?\s*(?:yard|yd)\b/i);
+  const dumpsterSize = sizeMatch ? `${sizeMatch[1]} yard` : null;
+  const durSrc = [vc.purpose, vc.custom_question_1, vc.custom_question_2, body.call_summary].filter(Boolean).join(" ");
+  const durMatch = durSrc.match(/(\d+)\s*(day|days|week|weeks|month|months)\b/i);
+  const rentalDuration = durMatch ? `${durMatch[1]} ${durMatch[2].toLowerCase()}` : null;
+
   return {
     service: service ? String(service) : null,
     zip: zip ? String(zip).trim() : null,
     city: city ? String(city) : null,
-    location: pickFirst(zip, city)
+    location: pickFirst(zip, city),
+    dumpster_size: dumpsterSize,
+    rental_duration: rentalDuration,
+    notes: vc.purpose ? String(vc.purpose) : (body.call_summary ? String(body.call_summary) : null)
   };
 }
 __name(extractCallRailFields, "extractCallRailFields");
@@ -1922,10 +1940,11 @@ async function handleCallRailWebhook(request, db, env) {
     }
     const sourceDetail = body.tracking_phone_number || body.source || "callrail_inbound";
     const result = await db.prepare(
-      `INSERT INTO leads (source, lead_source_detail, utm_source, utm_medium, utm_campaign, name, phone, project_type, score,
+      `INSERT INTO leads (source, lead_source_detail, utm_source, utm_medium, utm_campaign, name, phone, project_type,
+       dumpster_size, rental_duration, notes, score,
        assigned_to, operator_name, operator_prospect_id, status, callrail_call_id, call_duration, call_recording_url,
        zone, city, operator_notified_at, outcome, assigned_at)
-       VALUES ('callrail', ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 'new', ?, ?, ?, ?, ?, NULL, 'pending', NULL)`
+       VALUES ('callrail', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 'new', ?, ?, ?, ?, ?, NULL, 'pending', NULL)`
     ).bind(
       sourceDetail,
       body.utm_source || null,
@@ -1934,6 +1953,9 @@ async function handleCallRailWebhook(request, db, env) {
       callerName,
       callerPhone,
       projectType,
+      extracted.dumpster_size,
+      extracted.rental_duration,
+      extracted.notes,
       score,
       callId ? String(callId) : null,
       duration,
