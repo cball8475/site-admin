@@ -1,0 +1,30 @@
+name = "florence-crm-api"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+# Account ID is not a secret (it appears in dashboard URLs); the API token is.
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# D1 — lead/CRM database (florence-crm)
+[[d1_databases]]
+binding = "DB"
+database_name = "florence-crm"
+database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
+
+# Cron — daily SEO position snapshot at 06:00 UTC (handleSeoSnapshot).
+# MUST be declared here or `wrangler deploy` would drop the schedule.
+[triggers]
+crons = ["0 6 * * *"]
+
+# ---------------------------------------------------------------------------
+# Secrets are managed in Cloudflare (NOT in this file) and are preserved across
+# deploys. Required secrets:
+#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
+#   API_TOKEN, GITHUB_TOKEN
+#   GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
+#   GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_REFRESH_TOKEN
+#
+# Optional plain var (set via dashboard or `[vars]`):
+#   OPERATOR_PHONE — caller-ID the crew dials customers from; the customer SMS
+#   falls back to the main line (843) 938-0480 when unset.
+# ---------------------------------------------------------------------------
