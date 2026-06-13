@@ -1801,26 +1801,62 @@ var worker_default = {
     ctx.waitUntil(handleSeoSnapshot(env));
   }
 };
+// Flip to true once a live event logs verify="match" to start rejecting
+// unsigned/forged calls. Left false during initial confirmation so a secret/
+// encoding mismatch can't drop real Mercury deliveries.
+var ENFORCE_MERCURY_SIG = false;
+async function hmacHexSHA256(keyBytes, message) {
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(hmacHexSHA256, "hmacHexSHA256");
 async function verifyMercuryHmac(raw, headers, secret) {
-  // Mercury signs the RAW body with HMAC-SHA256. We compute both hex and base64
-  // and report whether any signature-like header contains either, so we can
-  // confirm the exact header name/format from the first real event.
+  // Mercury signature header: "t=<unix>,v1=<hex hmac-sha256>" signed over
+  // `${t}.${rawBody}` (Stripe-style). Try the secret as UTF-8 and as base64.
   if (!secret) return "no_secret";
-  const sig = headers["mercury-signature"] || headers["x-mercury-signature"]
-    || headers["webhook-signature"] || headers["svix-signature"] || null;
+  const sig = headers["mercury-signature"] || headers["x-mercury-signature"] || null;
   if (!sig) return "no_sig_header";
+  const parts = Object.fromEntries(
+    sig.split(",").map((kv) => kv.split("=").map((s) => s.trim())).filter((a) => a.length === 2)
+  );
+  const t = parts.t;
+  const v1 = (parts.v1 || "").toLowerCase();
+  if (!t || !v1) return "bad_sig_format";
+  const signed = `${t}.${raw}`;
   try {
-    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
-    const bytes = new Uint8Array(mac);
-    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const b64 = btoa(String.fromCharCode(...bytes));
-    return (sig.includes(hex) || sig.includes(b64)) ? "match" : "mismatch";
+    if (await hmacHexSHA256(new TextEncoder().encode(secret), signed) === v1) return "match";
+    try {
+      const bin = atob(secret);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (await hmacHexSHA256(bytes, signed) === v1) return "match";
+    } catch (_) {}
+    return "mismatch";
   } catch (e) {
     return "error";
   }
 }
 __name(verifyMercuryHmac, "verifyMercuryHmac");
+async function updateCashOnHand(db, cash) {
+  // Keep the latest financials snapshot's cash_on_hand current. Update today's
+  // row if present; otherwise insert a new row carrying over the prior figures.
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const existing = await db.prepare("SELECT id FROM financials WHERE snapshot_date = ?").bind(today).first();
+  if (existing) {
+    await db.prepare("UPDATE financials SET cash_on_hand = ?, updated_at = datetime('now') WHERE id = ?").bind(cash, existing.id).run();
+    return;
+  }
+  const last = await db.prepare("SELECT * FROM financials ORDER BY snapshot_date DESC LIMIT 1").first() || {};
+  await db.prepare(
+    "INSERT INTO financials (snapshot_date, revenue, total_invested, google_ads_spend, twilio_spend, other_spend, total_spend, cash_on_hand, cashback_earned, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))"
+  ).bind(
+    today, last.revenue ?? 0, last.total_invested ?? 0, last.google_ads_spend ?? 0,
+    last.twilio_spend ?? 0, last.other_spend ?? 0, last.total_spend ?? 0,
+    cash, last.cashback_earned ?? 0, last.notes || null
+  ).run();
+}
+__name(updateCashOnHand, "updateCashOnHand");
 async function handleMercuryWebhook(request, db, env) {
   // GET = Mercury's endpoint-verification probe → must return 200.
   if (request.method === "GET") return json({ ok: true });
@@ -1831,30 +1867,52 @@ async function handleMercuryWebhook(request, db, env) {
     const headers = {};
     for (const [k, v] of request.headers) headers[k] = v;
     const verify = await verifyMercuryHmac(raw, headers, env.MERCURY_WEBHOOK_SECRET);
+    if (ENFORCE_MERCURY_SIG && verify === "mismatch") return err("Invalid signature", 401);
 
-    const eventType = body.eventType || body.type || body.event || null;
-    const tx = body.transaction || body.data || body || {};
-    const amount = (tx.amount ?? tx.amountInDollars ?? tx.amountCents) ?? null;
-    const description = tx.bankDescription || tx.counterpartyName || tx.note || tx.description || null;
-    // Best-effort balance detection — captured if Mercury includes it, so we can
-    // confirm whether an API call is needed to refresh cash_on_hand.
-    const acct = body.account || tx.account || {};
-    const balance = body.currentBalance ?? body.availableBalance ?? tx.runningBalance
-      ?? tx.postedBalance ?? acct.currentBalance ?? acct.availableBalance ?? null;
-    // Discovery envelope: store headers + verification result + body so the first
-    // real event reveals the exact signature header and whether a balance is present.
-    const envelope = JSON.stringify({ verify, balance_detected: balance, headers, body });
+    // Mercury balance.updated events are JSON Merge Patch: resourceType
+    // (checkingAccount/savingsAccount/creditAccount), resourceId, and the changed
+    // balance in mergePatch (availableBalance / currentBalance).
+    const resourceType = body.resourceType || null;
+    const resourceId = body.resourceId || null;
+    const op = body.operationType || null;
+    const patch = body.mergePatch || {};
+    const availBal = patch.availableBalance ?? null;
+    const currBal = patch.currentBalance ?? null;
+    const eventType = resourceType && op ? `${resourceType}.${op}` : (body.eventType || null);
+    const changed = Array.isArray(body.changedPaths) ? body.changedPaths.join(",") : null;
+    const newBal = availBal ?? currBal;
+
+    let cash = null;
+    try {
+      await db.prepare("CREATE TABLE IF NOT EXISTS mercury_accounts (resource_id TEXT PRIMARY KEY, resource_type TEXT, available_balance REAL, current_balance REAL, updated_at TEXT)").run();
+      if (resourceId && (availBal !== null || currBal !== null)) {
+        await db.prepare(
+          "INSERT INTO mercury_accounts (resource_id, resource_type, available_balance, current_balance, updated_at) VALUES (?,?,?,?,datetime('now')) " +
+          "ON CONFLICT(resource_id) DO UPDATE SET resource_type=excluded.resource_type, " +
+          "available_balance=COALESCE(excluded.available_balance, mercury_accounts.available_balance), " +
+          "current_balance=COALESCE(excluded.current_balance, mercury_accounts.current_balance), updated_at=datetime('now')"
+        ).bind(resourceId, resourceType, availBal, currBal).run();
+        // cash on hand = available balance across checking + savings only
+        // (creditAccount is a liability, tracked but excluded).
+        const row = await db.prepare("SELECT COALESCE(SUM(available_balance),0) AS cash FROM mercury_accounts WHERE resource_type IN ('checkingAccount','savingsAccount')").first();
+        cash = row ? row.cash : null;
+        if (typeof cash === "number") await updateCashOnHand(db, cash);
+      }
+    } catch (e) {
+      console.error("mercury balance sync failed:", e);
+    }
+
+    const envelope = JSON.stringify({ verify, cash_on_hand: cash, headers, body });
     try {
       await db.prepare("CREATE TABLE IF NOT EXISTS mercury_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, amount REAL, description TEXT, raw TEXT, received_at TEXT DEFAULT (datetime('now')))").run();
       await db.prepare("INSERT INTO mercury_events (event_type, amount, description, raw) VALUES (?, ?, ?, ?)")
-        .bind(eventType, typeof amount === "number" ? amount : null, description, envelope).run();
+        .bind(eventType, typeof newBal === "number" ? newBal : null, changed, envelope).run();
     } catch (e) {
       console.error("mercury_events insert failed:", e);
     }
     return json({ received: true });
   } catch (e) {
     console.error("Mercury webhook error:", e);
-    // Still 200 so Mercury's verifier/retries succeed during setup.
     return json({ received: true });
   }
 }
