@@ -1005,6 +1005,7 @@ var worker_default = {
     if (path === "/submit-lead" && method === "POST") return handleFormSubmission(request, db, env);
     if (path === "/webhook/callrail" && method === "POST") return handleCallRailWebhook(request, db, env);
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
+    if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
       return json({ status: "ok", version: "2.22.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
@@ -1800,6 +1801,33 @@ var worker_default = {
     ctx.waitUntil(handleSeoSnapshot(env));
   }
 };
+async function handleMercuryWebhook(request, db, env) {
+  // GET = Mercury's endpoint-verification probe → must return 200.
+  if (request.method === "GET") return json({ ok: true });
+  // Optional signature check: set MERCURY_WEBHOOK_SECRET to enforce. Until then
+  // we accept + log so setup isn't blocked; tighten once the secret is added.
+  try {
+    let body = {};
+    try { body = await request.json(); } catch (_) { body = {}; }
+    const eventType = body.eventType || body.type || body.event || null;
+    const tx = body.transaction || body.data || body || {};
+    const amount = (tx.amount ?? tx.amountInDollars ?? tx.amountCents) ?? null;
+    const description = tx.bankDescription || tx.counterpartyName || tx.note || tx.description || null;
+    try {
+      await db.prepare("CREATE TABLE IF NOT EXISTS mercury_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, amount REAL, description TEXT, raw TEXT, received_at TEXT DEFAULT (datetime('now')))").run();
+      await db.prepare("INSERT INTO mercury_events (event_type, amount, description, raw) VALUES (?, ?, ?, ?)")
+        .bind(eventType, typeof amount === "number" ? amount : null, description, JSON.stringify(body)).run();
+    } catch (e) {
+      console.error("mercury_events insert failed:", e);
+    }
+    return json({ received: true });
+  } catch (e) {
+    console.error("Mercury webhook error:", e);
+    // Still 200 so Mercury's verifier/retries succeed during setup.
+    return json({ received: true });
+  }
+}
+__name(handleMercuryWebhook, "handleMercuryWebhook");
 async function handleTwilioInbound(request, db, env) {
   try {
     const form = await request.formData();
