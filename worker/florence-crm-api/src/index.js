@@ -1801,22 +1801,53 @@ var worker_default = {
     ctx.waitUntil(handleSeoSnapshot(env));
   }
 };
+async function verifyMercuryHmac(raw, headers, secret) {
+  // Mercury signs the RAW body with HMAC-SHA256. We compute both hex and base64
+  // and report whether any signature-like header contains either, so we can
+  // confirm the exact header name/format from the first real event.
+  if (!secret) return "no_secret";
+  const sig = headers["mercury-signature"] || headers["x-mercury-signature"]
+    || headers["webhook-signature"] || headers["svix-signature"] || null;
+  if (!sig) return "no_sig_header";
+  try {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+    const bytes = new Uint8Array(mac);
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const b64 = btoa(String.fromCharCode(...bytes));
+    return (sig.includes(hex) || sig.includes(b64)) ? "match" : "mismatch";
+  } catch (e) {
+    return "error";
+  }
+}
+__name(verifyMercuryHmac, "verifyMercuryHmac");
 async function handleMercuryWebhook(request, db, env) {
   // GET = Mercury's endpoint-verification probe → must return 200.
   if (request.method === "GET") return json({ ok: true });
-  // Optional signature check: set MERCURY_WEBHOOK_SECRET to enforce. Until then
-  // we accept + log so setup isn't blocked; tighten once the secret is added.
   try {
+    const raw = await request.text();
     let body = {};
-    try { body = await request.json(); } catch (_) { body = {}; }
+    try { body = JSON.parse(raw || "{}"); } catch (_) { body = {}; }
+    const headers = {};
+    for (const [k, v] of request.headers) headers[k] = v;
+    const verify = await verifyMercuryHmac(raw, headers, env.MERCURY_WEBHOOK_SECRET);
+
     const eventType = body.eventType || body.type || body.event || null;
     const tx = body.transaction || body.data || body || {};
     const amount = (tx.amount ?? tx.amountInDollars ?? tx.amountCents) ?? null;
     const description = tx.bankDescription || tx.counterpartyName || tx.note || tx.description || null;
+    // Best-effort balance detection — captured if Mercury includes it, so we can
+    // confirm whether an API call is needed to refresh cash_on_hand.
+    const acct = body.account || tx.account || {};
+    const balance = body.currentBalance ?? body.availableBalance ?? tx.runningBalance
+      ?? tx.postedBalance ?? acct.currentBalance ?? acct.availableBalance ?? null;
+    // Discovery envelope: store headers + verification result + body so the first
+    // real event reveals the exact signature header and whether a balance is present.
+    const envelope = JSON.stringify({ verify, balance_detected: balance, headers, body });
     try {
       await db.prepare("CREATE TABLE IF NOT EXISTS mercury_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, amount REAL, description TEXT, raw TEXT, received_at TEXT DEFAULT (datetime('now')))").run();
       await db.prepare("INSERT INTO mercury_events (event_type, amount, description, raw) VALUES (?, ?, ?, ?)")
-        .bind(eventType, typeof amount === "number" ? amount : null, description, JSON.stringify(body)).run();
+        .bind(eventType, typeof amount === "number" ? amount : null, description, envelope).run();
     } catch (e) {
       console.error("mercury_events insert failed:", e);
     }
