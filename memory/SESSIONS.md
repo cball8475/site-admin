@@ -29,7 +29,13 @@ Format:
   pages to `sitemap.xml`. Added `CLAUDE.md` (revenue-first priorities + pre-change
   checklist) to both repos. Established this markdown memory layer + memory-update
   protocol; seeded `knowledge` (was empty) and resumed `dev_session_log` (had
-  lapsed since 6/13).
+  lapsed since 6/13). Then, to recover the #1 keyword: changed the sitewide
+  nav/footer anchor 'Florence SC Guide' -> 'Florence Dumpster Rental' (132 links
+  / 44 pages, all already pointing to the pillar; ~95% of inbound anchors had
+  omitted the target term) and added a freshness signal to the pillar (sitemap
+  lastmod + schema dateModified -> 2026-06-18, visible 'Updated June 2026' cue).
+  All changes passed the Rule #0 / pre-change checklist (text-only anchor swap:
+  hrefs/forms/tracking untouched, no broken links, mobile nav verified).
 - **Repos:** cball8475/cball8475.github.io, cball8475/site-admin
 - **PRs:** none (work on branch `claude/seo-page-position-decline-ci62h7`)
 - **Deploys:** none — pushed to feature branch, not merged to main
