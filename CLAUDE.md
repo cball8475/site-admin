@@ -14,16 +14,24 @@ the website's lead engine measurable. Guard the lead pipeline above all:
 
 ## Persistent memory — update at the END of every session (do not skip)
 
-Memory lives in the `florence-crm` D1 database
-(`database_id 50e1fc12-682d-4d58-8506-93687a10dc36`). A fresh Claude session
-starts blank, so it only works if each session writes to it.
+**Canonical memory lives in git markdown in `site-admin/memory/`** — it is cloned
+into every session at startup, so it is reliable even when MCP servers are down:
 
-- **Start of session:** read recent `dev_session_log` rows and the `knowledge`
-  table to recover context.
-- **End of any session that changed something, you MUST write:**
-  1. `dev_session_log` — one row: `(session_date, title, summary, repos, prs, deploys)`.
-  2. `knowledge` — durable facts/decisions/gotchas: `(category, area, subject, detail, tags, source_label)`.
-  3. `achievements` — real milestones: `(date, category, title, description)`.
+- `memory/KNOWLEDGE.md` — durable facts, decisions, gotchas.
+- `memory/SESSIONS.md` — append-only session log (newest first).
+- `memory/ACHIEVEMENTS.md` — real milestones.
+
+These **mirror** the `florence-crm` D1 tables `knowledge` / `dev_session_log` /
+`achievements` (`database_id 50e1fc12-682d-4d58-8506-93687a10dc36`), which the
+dashboard app reads and the SEO cron writes. Keep both in sync.
+
+- **Start of session:** read `memory/SESSIONS.md` and `memory/KNOWLEDGE.md` to
+  recover context (fall back to the D1 tables if needed).
+- **End of any session that changed something, you MUST:**
+  1. Append a session entry to `memory/SESSIONS.md` **and** insert the same row
+     into D1 `dev_session_log`.
+  2. Add durable facts to `memory/KNOWLEDGE.md` **and** the D1 `knowledge` table.
+  3. Log real milestones to `memory/ACHIEVEMENTS.md` **and** D1 `achievements`.
 
 This lapsed before (`dev_session_log` stopped 2026-06-13; `knowledge` was empty
 until 2026-06-18). Don't let it lapse again.
