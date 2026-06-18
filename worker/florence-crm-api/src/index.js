@@ -30,7 +30,7 @@ function twiml(msg) {
 }
 __name(twiml, "twiml");
 __name2(twiml, "twiml");
-var SPAM_MIN_DURATION = 40;
+var SPAM_MIN_DURATION = 38;
 var AUTHORIZED_SMS = ["+18437581987", "18437581987", "8437581987"];
 function scoreLead(timeline, projectType) {
   const t = (timeline || "").toLowerCase().trim();
