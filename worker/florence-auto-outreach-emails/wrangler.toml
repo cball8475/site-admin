@@ -1,0 +1,27 @@
+name = "florence-auto-outreach-emails"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Cron — daily outreach send at 12:00 UTC (08:00 ET). MUST be declared here or
+# `wrangler deploy` would drop the schedule.
+[triggers]
+crons = ["0 12 * * *"]
+
+# Plain vars (not secret).
+[vars]
+CRM_API_URL = "https://florence-crm-api.cball8475.workers.dev"
+FROM_EMAIL = "charlie@florencescservices.com"
+FROM_NAME = "Charlie — Florence SC Services"
+
+# ---------------------------------------------------------------------------
+# Secrets are managed in Cloudflare (NOT in this file) and are preserved across
+# deploys. Required secrets:
+#   RESEND_API_KEY    — Resend API key (email send)
+#   CRM_API_TOKEN     — bearer token for florence-crm-api
+#   ADMIN_SECRET      — auth for /trigger, /test-email, /preview, /status, /stop
+#   UNSUB_SECRET      — HMAC key for signed one-click unsubscribe links
+# Optional (only if SMS steps are used):
+#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+# ---------------------------------------------------------------------------
