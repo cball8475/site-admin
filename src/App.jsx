@@ -125,13 +125,9 @@ function qualifyScore(biz) {
   return Math.min(s,100);
 }
 
-const SEED_PROSPECTS=[
-  {place_id:"p1",name:"Lou's Contracting LLC",rating:5.0,user_ratings_total:11,formatted_phone_number:"(843) 319-8508",website:"louscontracting.com",vicinity:"1615 Misty View Ln, Florence, SC",notes:"Top target â 5 stars, active contractor"},
-  {place_id:"p2",name:"SOMO Trash LLC",rating:5.0,user_ratings_total:22,formatted_phone_number:"(843) 307-3413",website:null,vicinity:"150 Nez Perce Dr, Darlington, SC",notes:"Personal contact â easiest first buyer"},
-  {place_id:"p3",name:"Timmons Waste Service",rating:4.2,user_ratings_total:32,formatted_phone_number:"(843) 393-4884",website:"timmonswaste.com",vicinity:"433 Lawson Rd, Darlington, SC",notes:"Most reviews in area â established"},
-  {place_id:"p4",name:"Florence Co. Recycling",rating:4.4,user_ratings_total:31,formatted_phone_number:"(843) 665-3050",website:null,vicinity:"359 S Ebenezer Rd, Florence, SC",notes:"No website â needs leads badly"},
-  {place_id:"p5",name:"S&P Container Service",rating:3.5,user_ratings_total:8,formatted_phone_number:"(843) 673-0404",website:null,vicinity:"220 W Ashby Rd, Florence, SC",notes:"Lower rating â opportunity to sell quality leads"},
-];
+// Prospects are sourced live from the CRM API (D1). The provider list was
+// restarted 2026-06-20 down to William/All-Wayz + Robert/Kaylor; repopulate
+// the rest via the "Search Google Places" button on the dashboard.
 
 // ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // OUTREACH SEQUENCES â the automation engine
@@ -154,11 +150,11 @@ const SEQUENCES = [
         template: `Hi {{firstName}},\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple â we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "email", label: "Value Prop Email",
-        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending dumpster rental leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for dumpster rentals in the Pee Dee region. Rather than keeping them, we partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending dumpster rental leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for dumpster rentals in the Pee Dee region. Rather than keeping them, we partner with one local operator per area. Here's the offer: be the first operator to claim your zone and your first month is free - every lead in your area comes to you, nobody else. A full month to see what exclusive coverage feels like. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
       },
       { day: 8, type: "email", label: "Case Study Email",
         subject: "How {{company}} can get more dumpster jobs without ads",
-        template: `Hi {{firstName}},\n\nMost dumpster rental companies in Florence rely on word of mouth or expensive Google Ads ($15-30 per click).\n\nWe do it differently â we rank organically for "dumpster rental Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+        template: `Hi {{firstName}},\n\nMost dumpster rental companies in Florence rely on word of mouth or expensive Google Ads ($15-30 per click).\n\nWe do it differently â we rank organically for "dumpster rental Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, claim your zone now and your first month is free - every lead in your area, exclusively yours. No strings.\n\nCharlie`
       },
       { day: 12, type: "email", label: "Final Email",
         subject: "Last note from me â {{company}}",
@@ -174,13 +170,13 @@ const SEQUENCES = [
     steps: [
       { day: 0, type: "email", label: "Check-in Email",
         subject: "Still sending dumpster leads in Florence â room for one more partner",
-        template: `Hi {{firstName}},\n\nWe connected a while back about sending dumpster rental leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+        template: `Hi {{firstName}},\n\nWe connected a while back about sending dumpster rental leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested? Claim your zone and your first month is free - all the leads in your area, exclusively yours.\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Quick Call",
         template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about leads â just wanted to see if now might be better timing for you. We've got more volume now and room for one more partner. Quick 2-minute call worth it?`
       },
       { day: 12, type: "sms", label: "Final Text",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have dumpster rental leads if you want to test it out â 2 free, no strings. Just reply YES and I'll send them your way.`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have dumpster rental leads if you want to test it out â first month free if you claim your zone - all the leads in your area, exclusively. Just reply YES and I'll send them your way.`
       },
     ]
   },
@@ -188,14 +184,14 @@ const SEQUENCES = [
     id: "pilot_followup",
     vertical: "dumpster",
     name: "Pilot Follow-up",
-    description: "After sending free leads â convert to paid.",
+    description: "After the first free month â convert to paid.",
     steps: [
       { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you X exclusive leads per month for your area. Pricing starts at $45/lead or $297/month for a set number. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+        template: `Hey {{firstName}}, Charlie here. Just checking in on those leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you X exclusive leads per month for your area. It's a flat monthly rate to lock your zone - no per-lead fees, nothing charged per lead - and you're the only operator we route leads to in your area. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
       },
       { day: 3, type: "email", label: "Pilot Results + Offer",
         subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ $45/lead (pay per lead) or $297/mo for a set volume\nâ¢ You're the only partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+        template: `Hi {{firstName}},\n\nHope the pilot leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ Flat monthly rate to lock your zone (no per-lead fees)\nâ¢ You're the only partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
         template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
@@ -219,11 +215,11 @@ const SEQUENCES = [
         template: `Hi {{firstName}},\n\nJust circling back on my note from a couple days ago. We have customers actively searching for junk removal and hauling services in your area.\n\nOur model is simple â we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Cold Call",
-        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending junk removal leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for junk removal and hauling services in the Pee Dee region. We partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending junk removal leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for junk removal and hauling services in the Pee Dee region. We partner with one local operator per area. Here's the offer: be the first operator to claim your zone and your first month is free - every lead in your area comes to you, nobody else. A full month to see what exclusive coverage feels like. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
       },
       { day: 8, type: "email", label: "Value Prop Email",
         subject: "How {{company}} can get more hauling jobs without ads",
-        template: `Hi {{firstName}},\n\nMost junk removal companies around here rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently â we rank organically for "junk removal" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+        template: `Hi {{firstName}},\n\nMost junk removal companies around here rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently â we rank organically for "junk removal" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, claim your zone now and your first month is free - every lead in your area, exclusively yours. No strings.\n\nCharlie`
       },
       { day: 12, type: "email", label: "Final Email",
         subject: "Last note from me â {{company}}",
@@ -239,13 +235,13 @@ const SEQUENCES = [
     steps: [
       { day: 0, type: "email", label: "Check-in Email",
         subject: "Still sending junk removal leads in your area â room for one more partner",
-        template: `Hi {{firstName}},\n\nWe connected a while back about sending junk removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+        template: `Hi {{firstName}},\n\nWe connected a while back about sending junk removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested? Claim your zone and your first month is free - all the leads in your area, exclusively yours.\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Quick Call",
         template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about junk removal leads â just wanted to see if timing is better now. We've got more volume and room for one more partner. Quick 2-minute call worth it?`
       },
       { day: 12, type: "sms", label: "Final Text",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have junk removal leads if you want to test it out â 2 free, no strings. Just reply YES and I'll send them your way.`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have junk removal leads if you want to test it out â first month free if you claim your zone - all the leads in your area, exclusively. Just reply YES and I'll send them your way.`
       },
     ]
   },
@@ -253,14 +249,14 @@ const SEQUENCES = [
     id: "hauling_pilot_followup",
     vertical: "hauling",
     name: "Pilot Follow-up â Hauling",
-    description: "After sending free junk removal leads â convert to paid.",
+    description: "After the first free month of junk removal leads â convert to paid.",
     steps: [
       { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those junk removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you exclusive junk removal and hauling leads per month for your area. Pricing starts at $297/month. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+        template: `Hey {{firstName}}, Charlie here. Just checking in on those junk removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you exclusive junk removal and hauling leads per month for your area. It's a flat monthly rate to lock your zone - no per-lead fees - and you're the only operator we route leads to in your area. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
       },
       { day: 3, type: "email", label: "Pilot Results + Offer",
         subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot junk removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ $297/mo Starter or $397/mo Growth plan\nâ¢ You're the only hauling partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+        template: `Hi {{firstName}},\n\nHope the pilot junk removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ Flat monthly rate to lock your zone (no per-lead fees)\nâ¢ You're the only hauling partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
         template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another hauling operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
@@ -288,10 +284,10 @@ async function generateOutreach(biz, type) {
   const service = isHauling ? "junk removal and hauling" : "dumpster rental";
   const niche   = isHauling ? "junk removal" : "dumpster rental";
   const prompts={
-    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. We offer 2 FREE exclusive leads as a pilot, no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
-    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). We offer 2 free exclusive leads, pilot program, one partner per area. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
-    sms:`Write a brief friendly SMS to "${biz.name}" ${niche} in Florence SC about our free pilot leads for ${service}. Max 2 sentences. Sound human.`,
-    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local lead gen pilot for ${service}. Mention their strong local reputation. Professional but warm.`,
+    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. We offer the first operator to claim a zone their first month free - every lead in their area, exclusively, no per-lead fees and no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
+    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). We offer the first operator to claim a zone their first month free - all the leads in their area, exclusively, one partner per zone, no per-lead fees. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
+    sms:`Write a brief friendly SMS to "${biz.name}" ${niche} in Florence SC about our first-month-free offer for the first ${service} operator to claim their zone (all the leads in their area, exclusively). Max 2 sentences. Sound human.`,
+    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local lead-gen offer for ${service} (first operator to claim a zone gets their first month free, no per-lead fees). Mention their strong local reputation. Professional but warm.`,
   };
   const res = await fetch("https://florence-outreach.cball8475.workers.dev", {
     method:"POST", headers:{"Content-Type":"application/json"},
