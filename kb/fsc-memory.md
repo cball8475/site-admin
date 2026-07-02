@@ -6,6 +6,20 @@ rediscover. Add dated entries at the top; never put credentials in this file
 (this repo is public — keys live in the fsc-credentials store and in
 Cloudflare/GitHub secrets).
 
+**FSC memory is a three-layer system:**
+
+1. **D1** — `memory` table in the florence-crm database, served by the worker:
+   `GET/POST https://florence-crm-api.cball8475.workers.dev/memory` (Bearer
+   `API_TOKEN`; GET filters: `q`, `category`, `limit`; POST body:
+   `{category, title, content}` — titles are unique, re-POSTing a title
+   updates the entry). Added in worker v2.24.0.
+2. **md files** — this file (and other `kb/*.md`), the stable playbook layer.
+3. **GitHub** — the repo itself; commit history is the audit trail.
+
+When saving memory, write the durable summary here AND insert a condensed
+entry into D1 (or, from a session without the API token, add it to the
+worker's `MEMORY_SEED`-style idempotent seed and deploy).
+
 ---
 
 ## 2026-07-02 — Lead-alert system audit + Resend email backup (v2.23.0)

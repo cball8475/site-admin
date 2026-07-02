@@ -358,6 +358,39 @@ async function notifyOwner(env, db, lead, leadId) {
 }
 __name(notifyOwner, "notifyOwner");
 
+// --- FSC memory (D1 layer) --------------------------------------------------
+// FSC memory is three layers: this D1 table (live, queryable), kb/*.md files
+// in the repo (stable playbook), and GitHub history. Sessions read/write via
+// GET/POST /memory with the API token. The seed below is inserted
+// idempotently (UNIQUE title) from /health/db, so entries can land even from
+// sessions that lack the API token but can trigger a deploy.
+var MEMORY_TABLE_SQL = `CREATE TABLE IF NOT EXISTS memory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL DEFAULT 'general',
+  title TEXT NOT NULL UNIQUE,
+  content TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`;
+var MEMORY_SEED = {
+  category: "infrastructure",
+  title: "2026-07-02 — lead-alert audit + Resend email backup (v2.23.0)",
+  content: [
+    "Lead alerts: every new lead (website form /submit-lead, CallRail /webhook/callrail, manual POST /leads) runs notifyOwner(): (1) Twilio SMS to operator cell from +18437734140, (2) backup email via Resend leads@florencescservices.com -> cball8475@gmail.com stating whether the SMS succeeded, (3) both results logged to lead_events as 'owner_alert' (check GET /leads/:id/events when texts seem missing).",
+    "CallRail (verified live from swap.js config, company 322241453): (843) 938-0480 — the number on every site page — IS a CallRail tracking number; (843) 977-3419 is the second pool number; swap target 843-758-1987 (personal cell) appears nowhere on the site, so no call bypasses CallRail. Webhook to this worker confirmed working. Calls under 38s are dropped as spam (SPAM_MIN_DURATION) — no lead, no text.",
+    "Twilio: owner SMS delivery confirmed working 2026-07-02 (test leads #97-#99). If owner_alert shows sent:true but no text arrives, check Twilio Console messaging logs for carrier drops (error 30034).",
+    "Deploy: worker auto-deploys from site-admin main via .github/workflows/deploy-worker.yml. Email alerts stay OFF until the RESEND_API_KEY Actions repo secret is added to site-admin and the workflow re-run (it syncs the secret to the worker). Until then owner_alert shows email reason resend_key_missing.",
+    "Remote Claude sessions cannot set GitHub Actions secrets (proxy blocks Actions-secrets endpoints) and no Cloudflare/Twilio/Resend/API_TOKEN credentials exist in any repo — secret changes are a Charlie task via GitHub settings.",
+    "FSC memory layers: this D1 memory table + site-admin kb/fsc-memory.md + GitHub history."
+  ].join("\n\n")
+};
+async function ensureMemorySeed(db) {
+  await db.prepare(MEMORY_TABLE_SQL).run();
+  await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)")
+    .bind(MEMORY_SEED.category, MEMORY_SEED.title, MEMORY_SEED.content).run();
+}
+__name(ensureMemorySeed, "ensureMemorySeed");
+
 // --- CallRail Voice Assist field extraction --------------------------------
 // Voice Assist / geo-routing captures the caller's intent and ZIP, but the
 // payload shape varies. We probe the documented + likely fields and fall back
@@ -1078,16 +1111,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.23.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.24.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
-        return json({ ok: dbOk, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, dbOk ? 200 : 503);
+        await ensureMemorySeed(db);
+        const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -1098,6 +1133,28 @@ var worker_default = {
       if (path === "/ads/search-terms" && method === "GET") return handleAdsSearchTerms(request, env);
       if (path === "/ads/campaign-criteria" && method === "GET") return handleAdsCampaignCriteria(request, env);
       if ((path === "/gsc/metrics" || path === "/seo/metrics") && method === "GET") return handleGscMetrics(request, env);
+      if (path === "/memory" && method === "GET") {
+        await ensureMemorySeed(db);
+        const q = url.searchParams.get("q");
+        const category = url.searchParams.get("category");
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 200);
+        const conds = [], vals = [];
+        if (q) { conds.push("(title LIKE ? OR content LIKE ?)"); vals.push(`%${q}%`, `%${q}%`); }
+        if (category) { conds.push("category = ?"); vals.push(category); }
+        let sql = "SELECT * FROM memory" + (conds.length ? " WHERE " + conds.join(" AND ") : "") + " ORDER BY created_at DESC, id DESC LIMIT ?";
+        vals.push(limit);
+        const { results } = await db.prepare(sql).bind(...vals).all();
+        return json({ memory: results || [] });
+      }
+      if (path === "/memory" && method === "POST") {
+        await ensureMemorySeed(db);
+        const body = await request.json();
+        if (!body.title || !body.content) return err("Required: title, content");
+        const ins = await db.prepare(
+          "INSERT INTO memory (category, title, content) VALUES (?, ?, ?) ON CONFLICT(title) DO UPDATE SET content = excluded.content, category = excluded.category, updated_at = datetime('now')"
+        ).bind(body.category || "general", body.title, body.content).run();
+        return json({ success: true, id: ins.meta?.last_row_id || null }, 201);
+      }
       if (path === "/competitors/auction-insights" && method === "GET") {
         await db.prepare("CREATE TABLE IF NOT EXISTS data_store (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now')))").run();
         const row = await db.prepare("SELECT value, updated_at FROM data_store WHERE key = 'auction_insights'").first();
