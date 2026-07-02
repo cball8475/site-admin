@@ -20,11 +20,15 @@ crons = ["0 6 * * *"]
 # Secrets are managed in Cloudflare (NOT in this file) and are preserved across
 # deploys. Required secrets:
 #   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
+#   RESEND_API_KEY — owner lead-alert emails (same FSC Resend account/key the
+#     eaton-ehs-api weekly digest uses); without it email alerts are skipped
 #   API_TOKEN, GITHUB_TOKEN
 #   GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
 #   GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_REFRESH_TOKEN
 #
-# Optional plain var (set via dashboard or `[vars]`):
+# Optional plain vars (set via dashboard or `[vars]`):
 #   OPERATOR_PHONE — caller-ID the crew dials customers from; the customer SMS
 #   falls back to the main line (843) 938-0480 when unset.
+#   LEAD_ALERT_TO / LEAD_ALERT_FROM — owner lead-alert email override
+#   (defaults: cball8475@gmail.com / leads@florencescservices.com).
 # ---------------------------------------------------------------------------

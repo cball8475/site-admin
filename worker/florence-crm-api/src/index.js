@@ -163,7 +163,7 @@ async function sendLeadSMS(env, { name, phone, city, zone, project_type, score, 
   const token = env.TWILIO_AUTH_TOKEN;
   if (!sid || !token) {
     console.warn("Twilio secrets missing \u2014 SMS skipped");
-    return;
+    return { sent: false, reason: "twilio_secrets_missing" };
   }
   const from = "+18437734140";
   const to = "+18437581987";
@@ -194,9 +194,13 @@ async function sendLeadSMS(env, { name, phone, city, zone, project_type, score, 
     if (!res.ok) {
       const e = await res.text();
       console.error(`Twilio SMS failed: ${res.status} \u2014 ${e}`);
-    } else console.log(`SMS sent for lead #${leadId}`);
+      return { sent: false, reason: `twilio_${res.status}`, error: String(e).slice(0, 300) };
+    }
+    console.log(`SMS sent for lead #${leadId}`);
+    return { sent: true, to };
   } catch (e) {
     console.error("Twilio SMS error:", e);
+    return { sent: false, reason: "exception", error: (e && e.message) || String(e) };
   }
 }
 __name(sendLeadSMS, "sendLeadSMS");
@@ -286,6 +290,73 @@ async function sendCustomerSMS(env, { name, phone, service, city, source, consen
   }
 }
 __name(sendCustomerSMS, "sendCustomerSMS");
+
+// --- Owner lead alerts: email backup + unified notify -----------------------
+// SMS alone proved fragile (A2P/carrier filtering fails silently after Twilio
+// accepts the message), so every new lead also emails the owner via Resend
+// (same FSC account / verified domain the EATON weekly digest uses). Both
+// results are logged to lead_events as 'owner_alert' so delivery problems are
+// visible in the dashboard instead of only in worker console logs.
+var LEAD_ALERT_TO = "cball8475@gmail.com";
+var LEAD_ALERT_FROM = "leads@florencescservices.com";
+async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, score, source }, leadId, smsResult) {
+  if (!env.RESEND_API_KEY) {
+    console.warn("RESEND_API_KEY not set — lead alert email skipped");
+    return { sent: false, reason: "resend_key_missing" };
+  }
+  const zoneLabel = zone ? `Zone ${zone}` : "Unknown zone";
+  const smsNote = smsResult && smsResult.sent
+    ? "Owner SMS: sent (check your phone — if it never arrives, carrier/A2P filtering is dropping it)."
+    : `Owner SMS: FAILED (${(smsResult && smsResult.reason) || "unknown"}${smsResult && smsResult.error ? " — " + smsResult.error : ""})`;
+  const body = [
+    `New FSC lead #${leadId}`,
+    ``,
+    `Name: ${name || "n/a"}`,
+    `Phone: ${phone || "n/a"}`,
+    `City: ${city || "n/a"} (${zoneLabel})`,
+    `Service: ${project_type || "n/a"}`,
+    `Score: ${score}`,
+    `Source: ${source}`,
+    ``,
+    smsNote,
+    ``,
+    `Reply by text from your cell: RESPONDED ${leadId} / BOOKED ${leadId} / LOST ${leadId}`
+  ].join("\n");
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: `FSC Leads <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`,
+        to: [env.LEAD_ALERT_TO || LEAD_ALERT_TO],
+        subject: `FSC NEW LEAD #${leadId} — ${String(score).toUpperCase()} — ${city || "unknown city"} (${zoneLabel})`,
+        text: body
+      })
+    });
+    let detail = null;
+    try { detail = await res.json(); } catch {}
+    if (!res.ok) {
+      console.error(`Lead alert email failed: ${res.status} — ${JSON.stringify(detail).slice(0, 300)}`);
+      return { sent: false, reason: `resend_${res.status}`, error: (detail && (detail.message || detail.name)) || null };
+    }
+    console.log(`Lead alert email sent for lead #${leadId} (${detail && detail.id})`);
+    return { sent: true, id: (detail && detail.id) || null };
+  } catch (e) {
+    console.error("Lead alert email error:", e);
+    return { sent: false, reason: "exception", error: (e && e.message) || String(e) };
+  }
+}
+__name(sendLeadAlertEmail, "sendLeadAlertEmail");
+async function notifyOwner(env, db, lead, leadId) {
+  const sms = await sendLeadSMS(env, lead, leadId);
+  const email = await sendLeadAlertEmail(env, lead, leadId, sms);
+  await logLeadEvent(db, leadId, "owner_alert", { sms, email }, "system");
+  return { sms, email };
+}
+__name(notifyOwner, "notifyOwner");
 
 // --- CallRail Voice Assist field extraction --------------------------------
 // Voice Assist / geo-routing captures the caller's intent and ZIP, but the
@@ -1007,16 +1078,16 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.22.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.23.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.22.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
-        return json({ ok: dbOk, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.22.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.22.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.23.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -1511,7 +1582,7 @@ var worker_default = {
           await db.prepare("INSERT INTO activities (prospect_id, type, note) VALUES (?, 'lead_received', ?)").bind(assignedTo, `[lead_${leadId}] New ${score} lead from ${body.source || "manual"}: ${body.name || "Unknown"} \u2014 ${body.project_type || "N/A"}`).run();
           await logLeadEvent(db, leadId, "assigned", { operator: operatorName, operator_id: assignedTo }, "system");
         }
-        await sendLeadSMS(env, { name: body.name, phone: body.phone, city: cityVal, zone, project_type: body.project_type, score, source: body.source || "manual" }, leadId);
+        await notifyOwner(env, db, { name: body.name, phone: body.phone, city: cityVal, zone, project_type: body.project_type, score, source: body.source || "manual" }, leadId);
         const created = await db.prepare("SELECT * FROM leads WHERE id = ?").bind(leadId).first();
         return json(created, 201);
       }
@@ -2021,7 +2092,7 @@ async function handleFormSubmission(request, db, env) {
     ).run();
     const leadId = result.meta.last_row_id;
     await logLeadEvent(db, leadId, "created", { source: "website_form", score, zone, city: cityVal }, "system");
-    await sendLeadSMS(env, { name: body.name, phone: body.phone, city: cityVal, zone, project_type: body.project_type, score, source: "website_form" }, leadId);
+    await notifyOwner(env, db, { name: body.name, phone: body.phone, city: cityVal, zone, project_type: body.project_type, score, source: "website_form" }, leadId);
     const consent = consentGiven(body);
     if (consent) await logLeadEvent(db, leadId, "sms_consent", { source: "website_form", channel: "sms", consent_text: "lead form checkbox" }, "customer");
     await sendCustomerSMS(env, { name: body.name, phone: body.phone, service: body.project_type || body.dumpster_size, city: body.city || cityVal, source: "website_form", consent }, leadId);
@@ -2085,7 +2156,7 @@ async function handleCallRailWebhook(request, db, env) {
     // Log the raw CallRail payload so the real Voice Assist field names can be
     // confirmed from live calls (trial-period field discovery).
     await logLeadEvent(db, leadId, "callrail_raw", body, "system");
-    await sendLeadSMS(env, { name: callerName, phone: callerPhone, city: cityStore, zone, project_type: projectType, score, source: "callrail" }, leadId);
+    await notifyOwner(env, db, { name: callerName, phone: callerPhone, city: cityStore, zone, project_type: projectType, score, source: "callrail" }, leadId);
     // Inbound caller initiated contact → transactional reply permitted (STOP included).
     // Omit city in the copy: CallRail's caller_city is unreliable and we don't want
     // to name a wrong town to the customer.
