@@ -24,3 +24,17 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker/florence-crm-api
+      # Optional repo secret RESEND_API_KEY: when present, sync it to the
+      # worker so owner lead-alert emails turn on. Adding the repo secret and
+      # re-running this workflow is all it takes — no local wrangler needed.
+      - name: Sync RESEND_API_KEY worker secret
+        working-directory: worker/florence-crm-api
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$RESEND_API_KEY" ]; then
+            printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+          else
+            echo "RESEND_API_KEY repo secret not set — skipping (email lead alerts stay off until it is added)"
+          fi

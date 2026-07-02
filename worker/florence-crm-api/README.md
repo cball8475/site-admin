@@ -52,6 +52,30 @@ WHERE event_type = 'callrail_raw' ORDER BY id DESC LIMIT 1;
 
 Then tighten the field list in `extractCallRailFields()` to the confirmed names.
 
+## Owner lead alerts (v2.23.0)
+
+Every new lead (website form, CallRail webhook, manual/API create) triggers
+`notifyOwner()`:
+
+1. **SMS** via Twilio to the operator cell (unchanged), but the send result is
+   now captured instead of thrown away.
+2. **Email backup** via Resend to `cball8475@gmail.com` from
+   `leads@florencescservices.com` — sends regardless of SMS outcome and flags
+   in the body whether the SMS succeeded. Override recipients with the
+   `LEAD_ALERT_TO` / `LEAD_ALERT_FROM` vars.
+3. Both results are logged to `lead_events` as `event_type = 'owner_alert'`,
+   so silent SMS failures are visible per-lead (`GET /leads/:id/events`).
+
+Requires the `RESEND_API_KEY` secret (same key as the eaton-ehs-api digest):
+
+```sh
+npx wrangler secret put RESEND_API_KEY
+```
+
+Caveat: Twilio can accept a message (logged `sent: true`) that carriers later
+drop for A2P reasons (e.g. error 30034). If SMS shows sent but never arrives,
+check Twilio Console → Monitor → Messaging logs for the delivery error.
+
 ## Open follow-ups
 
 - Confirm `+18437734140` is attached to Messaging Service
