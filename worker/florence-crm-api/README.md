@@ -76,6 +76,15 @@ Caveat: Twilio can accept a message (logged `sent: true`) that carriers later
 drop for A2P reasons (e.g. error 30034). If SMS shows sent but never arrives,
 check Twilio Console → Monitor → Messaging logs for the delivery error.
 
+## FSC memory D1 layer (v2.24.0)
+
+`GET/POST /memory` (Bearer `API_TOKEN`) — the D1 layer of the three-layer FSC
+memory system (D1 + `kb/*.md` + GitHub). GET filters: `q`, `category`,
+`limit`. POST `{category, title, content}`; titles are unique and re-POSTing
+a title updates the entry. `/health/db` idempotently seeds the table and
+reports `memory_rows`, so a session without the API token can still land an
+entry by extending the seed and deploying.
+
 ## Open follow-ups
 
 - Confirm `+18437734140` is attached to Messaging Service
