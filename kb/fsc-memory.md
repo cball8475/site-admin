@@ -38,10 +38,22 @@ error" toast — i.e. the frontend is fine and every `/api/*` call through the
 - v2.24.0 diff is benign (isolated /memory endpoints; /stats untouched).
 - Direct `api.florencescservices.com/stats` unauth → the worker's own 401
   JSON (no Access on the api host).
-- Charlie then said "I have a new api token to use" → **leading theory:
-  API_TOKEN was rotated; the proxy's `CRM_API_TOKEN` secret still holds the
-  stale value, so the API 401s everything the dashboard sends.** The canary
-  stays green because its token copy was updated — worst kind of drift.
+- **CONFIRMED root cause** (Charlie read the on-screen error):
+  `CRM GET /leads?limit=200: 401: {"error":"Unauthorized"}` — the request
+  reaches the CRM API (routing fine; 1042/custom-domain theory eliminated)
+  and the API rejects the proxy's bearer. The proxy's `CRM_API_TOKEN`
+  secret no longer matches the CRM worker's `API_TOKEN`. The canary stays
+  green because its own token copy (Secrets Store) is current.
+- Fix: paste the current token (fsc-credentials store — the value the
+  canary uses) into Workers → florence-dashboard-proxy → Settings →
+  Variables and Secrets → `CRM_API_TOKEN`. No rebuild needed. If rotating
+  instead, update all three copies together: API_TOKEN (florence-crm-api),
+  CRM_API_TOKEN (florence-dashboard-proxy), Secrets Store CRM_TOKEN
+  (fsc-api-canary).
+- Unrelated: the "new api token" Charlie mentioned is his regenerated
+  GitHub "Admin Token" PAT (expiry emails 2026-07-02) — that belongs in
+  florence-crm-api's `GITHUB_TOKEN` secret (powers /github-push and
+  /github-inject-pixel only; nothing to do with dashboard data).
 - Secondary suspect (can't be ruled out from outside Access): the proxy's
   `/api` upstream fetch is a same-zone worker→worker `fetch()`, which
   Cloudflare blocks (error 1042) unless `api.florencescservices.com` is a
