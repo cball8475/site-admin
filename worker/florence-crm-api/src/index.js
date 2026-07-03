@@ -1111,18 +1111,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.24.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.25.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
         await ensureMemorySeed(db);
         const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
-        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -2175,13 +2175,36 @@ async function handleCallRailWebhook(request, db, env) {
     const cityStore = extracted.location || body.caller_city || body.city || null;
     const zone = detectZone(extracted.zip || extracted.city || body.caller_city || body.city || "");
     const score = scoreCall(duration);
-    if (duration < SPAM_MIN_DURATION) {
-      console.log(`Spam filtered: call_id=${callId} duration=${duration}s caller=${callerPhone}`);
-      return json({ success: true, filtered: true, reason: "spam_short_call", duration });
-    }
     if (callId) {
       const existing = await db.prepare("SELECT id FROM leads WHERE callrail_call_id = ?").bind(String(callId)).first();
       if (existing) return json({ success: true, duplicate: true, lead_id: existing.id });
+    }
+    if (duration < SPAM_MIN_DURATION) {
+      // Store filtered calls as status='spam' instead of dropping them — a
+      // silent drop hid a multi-week call-lead outage (nothing in D1 to show
+      // whether the webhook fired at all). No owner alert, no customer SMS.
+      console.log(`Spam filtered: call_id=${callId} duration=${duration}s caller=${callerPhone}`);
+      const spamIns = await db.prepare(
+        `INSERT INTO leads (source, lead_source_detail, name, phone, project_type, notes, score,
+         status, callrail_call_id, call_duration, call_recording_url, zone, city, outcome)
+         VALUES ('callrail', ?, ?, ?, ?, ?, ?, 'spam', ?, ?, ?, ?, ?, 'pending')`
+      ).bind(
+        body.tracking_phone_number || body.source || "callrail_inbound",
+        callerName,
+        callerPhone,
+        projectType,
+        extracted.notes,
+        score,
+        callId ? String(callId) : null,
+        duration,
+        body.recording || body.recording_url || null,
+        zone,
+        cityStore
+      ).run();
+      const spamLeadId = spamIns.meta.last_row_id;
+      await logLeadEvent(db, spamLeadId, "spam_filtered", { duration, threshold: SPAM_MIN_DURATION, caller: callerPhone }, "system");
+      await logLeadEvent(db, spamLeadId, "callrail_raw", body, "system");
+      return json({ success: true, filtered: true, reason: "spam_short_call", duration, lead_id: spamLeadId });
     }
     const sourceDetail = body.tracking_phone_number || body.source || "callrail_inbound";
     const result = await db.prepare(

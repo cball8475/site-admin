@@ -338,8 +338,8 @@ async function searchGooglePlaces(keyword, location, apiKey) {
 const crmScoreColor = s => s==="hot"?C.green:s==="warm"?C.amber:C.red;
 const crmScoreIcon  = s => s==="hot"?"ð¥":s==="warm"?"â¡":"âï¸";
 const crmScoreLabel = s => s==="hot"?"ð¥ Hot":s==="warm"?"â¡ Warm":"âï¸ Cold";
-const statusColor   = s => ({new:C.blue,contacted:C.amber,qualified:C.green,delivered:C.purple,rejected:C.red,expired:C.muted})[s]||C.muted;
-const statusLabel   = s => ({new:"New",contacted:"Contacted",qualified:"Qualified",delivered:"Delivered",rejected:"Rejected",expired:"Expired"})[s]||s;
+const statusColor   = s => ({new:C.blue,contacted:C.amber,qualified:C.green,delivered:C.purple,rejected:C.red,expired:C.muted,spam:C.red})[s]||C.muted;
+const statusLabel   = s => ({new:"New",contacted:"Contacted",qualified:"Qualified",delivered:"Delivered",rejected:"Rejected",expired:"Expired",spam:"🚫 Spam"})[s]||s;
 
 function LeadsDashboard({flash}) {
   const crmUrl   = ENV_CRM_URL;
@@ -355,6 +355,7 @@ function LeadsDashboard({flash}) {
   const [subTab,setSubTab]           = useState("leads"); // leads | pilots | stats
 
   // Filters
+  const [showSpam,setShowSpam] = useState(false);
   const [fScore,setFScore]   = useState("all");
   const [fStatus,setFStatus] = useState("all");
   const [fSource,setFSource] = useState("all");
@@ -428,6 +429,7 @@ function LeadsDashboard({flash}) {
 
   // Filtering
   const filtered = leads.filter(l => {
+    if(l.status==="spam" && !showSpam && fStatus!=="spam") return false;
     if(fScore!=="all" && l.score!==fScore) return false;
     if(fStatus!=="all" && l.status!==fStatus) return false;
     if(fSource!=="all" && l.source!==fSource) return false;
@@ -439,12 +441,14 @@ function LeadsDashboard({flash}) {
     return true;
   });
 
-  // Counts
-  const hotCount  = leads.filter(l=>l.score==="hot").length;
-  const warmCount = leads.filter(l=>l.score==="warm").length;
-  const coldCount = leads.filter(l=>l.score==="cold").length;
-  const newCount  = leads.filter(l=>l.status==="new").length;
-  const todayCount = leads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
+  // Counts (spam-filtered calls excluded from headline numbers)
+  const realLeads = leads.filter(l=>l.status!=="spam");
+  const spamCount = leads.length - realLeads.length;
+  const hotCount  = realLeads.filter(l=>l.score==="hot").length;
+  const warmCount = realLeads.filter(l=>l.score==="warm").length;
+  const coldCount = realLeads.filter(l=>l.score==="cold").length;
+  const newCount  = realLeads.filter(l=>l.status==="new").length;
+  const todayCount = realLeads.filter(l=>l.created_at&&new Date(l.created_at).toDateString()===new Date().toDateString()).length;
 
   const operatorName = (id) => {
     if(!id) return "Unassigned";
@@ -515,6 +519,15 @@ function LeadsDashboard({flash}) {
                   </button>
                 ))}
               </div>
+              {spamCount>0&&(
+                <button onClick={()=>setShowSpam(v=>!v)}
+                  style={{...btnBase,width:"100%",justifyContent:"center",marginTop:4,padding:"0.2rem",fontSize:8,
+                    background:showSpam?"rgba(239,68,68,0.15)":"transparent",
+                    color:showSpam?"#fca5a5":"rgba(255,255,255,0.25)",
+                    border:`1px solid ${showSpam?"rgba(239,68,68,0.3)":"transparent"}`}}>
+                  {showSpam?`🚫 Showing ${spamCount} spam`:`👻 ${spamCount} spam hidden`}
+                </button>
+              )}
               <div style={{display:"flex",gap:2,marginTop:3}}>
                 {["all","new","contacted","delivered","rejected"].map(f=>(
                   <button key={f} onClick={()=>setFStatus(f)}
