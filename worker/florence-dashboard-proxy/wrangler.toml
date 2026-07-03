@@ -1,0 +1,24 @@
+name = "florence-dashboard-proxy"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Service binding to the CRM API worker. /api/* traffic goes over this binding
+# instead of a public fetch to api.florencescservices.com — same-zone
+# worker-to-worker fetch() is blocked by Cloudflare (error 1042) unless the
+# target hostname is a Workers Custom Domain, so the binding removes that
+# whole failure class (same pattern fsc-api-canary uses).
+[[services]]
+binding = "CRM_API"
+service = "florence-crm-api"
+
+# NOTE: dashboard.florencescservices.com is attached to this worker in the
+# Cloudflare dashboard (Custom Domain). It is deliberately NOT declared here
+# so deploys never touch the hostname binding. Cloudflare Access (org
+# florencesc.cloudflareaccess.com) fronts the hostname.
+#
+# Secrets (preserved across deploys):
+#   CRM_API_TOKEN — bearer the proxy attaches to /api/* upstream requests.
+#     Must match the CRM worker's API_TOKEN; rotate BOTH together, or the
+#     dashboard 401s on every data call while /health stays green.

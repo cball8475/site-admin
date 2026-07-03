@@ -1,6 +1,6 @@
-name: Deploy florence-crm-api
+name: Deploy workers
 
-# Deploys the Cloudflare Worker whenever its source changes on main.
+# Deploys the Cloudflare Workers whenever their source changes on main.
 # Runs on GitHub's runners (no network egress limits), so it works even when a
 # local/cloud session can't reach api.cloudflare.com.
 #
@@ -12,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'worker/florence-crm-api/**'
+      - 'worker/florence-dashboard-proxy/**'
       - '.github/workflows/deploy-worker.yml'
   workflow_dispatch: {}
 
@@ -37,4 +38,28 @@ jobs:
             printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
           else
             echo "RESEND_API_KEY repo secret not set — skipping (email lead alerts stay off until it is added)"
+          fi
+
+  deploy-dashboard-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/florence-dashboard-proxy
+      # Optional repo secret CRM_API_TOKEN: when present, sync it to the proxy
+      # so its bearer matches the CRM worker's API_TOKEN after a rotation.
+      # (Rotating API_TOKEN without updating the proxy 401s every dashboard
+      # data call while /health stays green.)
+      - name: Sync CRM_API_TOKEN proxy secret
+        working-directory: worker/florence-dashboard-proxy
+        env:
+          CRM_API_TOKEN: ${{ secrets.CRM_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$CRM_API_TOKEN" ]; then
+            printf '%s' "$CRM_API_TOKEN" | npx wrangler secret put CRM_API_TOKEN
+          else
+            echo "CRM_API_TOKEN repo secret not set — skipping (proxy keeps its existing secret)"
           fi

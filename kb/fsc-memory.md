@@ -22,7 +22,53 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
-## 2026-07-03 — "Site admin doesn't load" = Access lockout; charlie@ inbound email dead since ~Apr 21
+## 2026-07-03 — "Site admin doesn't load" (part 2): app shell loads, every /api call fails
+
+Screenshot from Charlie's phone corrected part 1: he still has a valid Access
+session, so the lockout below is a *latent* problem, not the live one. Live
+symptom: nav renders, "Loading company snapshot…" forever, red "CRM API
+error" toast — i.e. the frontend is fine and every `/api/*` call through the
+`florence-dashboard-proxy` worker fails.
+
+### What was verified while diagnosing
+- CRM API fully green end-to-end: `/health` 200 v2.24.0, and the
+  `fsc-api-canary` worker (service binding + its own token from Secrets
+  Store) got **200 on gated `/stats`** — so API, D1, and *its* copy of the
+  token all work.
+- v2.24.0 diff is benign (isolated /memory endpoints; /stats untouched).
+- Direct `api.florencescservices.com/stats` unauth → the worker's own 401
+  JSON (no Access on the api host).
+- Charlie then said "I have a new api token to use" → **leading theory:
+  API_TOKEN was rotated; the proxy's `CRM_API_TOKEN` secret still holds the
+  stale value, so the API 401s everything the dashboard sends.** The canary
+  stays green because its token copy was updated — worst kind of drift.
+- Secondary suspect (can't be ruled out from outside Access): the proxy's
+  `/api` upstream fetch is a same-zone worker→worker `fetch()`, which
+  Cloudflare blocks (error 1042) unless `api.florencescservices.com` is a
+  Workers **Custom Domain** (not a route). If the hostname's attachment type
+  drifted, the same symptom appears. 10-second check from a logged-in
+  browser: open `dashboard.florencescservices.com/api/health` —
+  `{"status":"ok"…}` = routing fine (token drift confirmed); `error code:
+  1042` = custom-domain drift.
+
+### Fix shipped in this branch
+- `worker/florence-dashboard-proxy/` — proxy source brought under version
+  control (seeded from the live deployed worker), `/api` now goes over a
+  **service binding** to `florence-crm-api` (kills the 1042 class outright,
+  same pattern as fsc-api-canary), public-fetch fallback if the binding is
+  missing.
+- Deploy workflow extended: second job deploys the proxy on merge to main,
+  and (optional repo secret `CRM_API_TOKEN`) syncs the proxy's bearer secret
+  — so a token rotation is fixed by updating the repo secret and re-running
+  the workflow.
+- After merging: set the new API token as the `CRM_API_TOKEN` repo Actions
+  secret (Charlie-from-phone task, same as RESEND_API_KEY) and re-run
+  "Deploy workers", OR paste it into the proxy worker's secret directly in
+  the Cloudflare dash (Workers → florence-dashboard-proxy → Settings →
+  Variables & Secrets). If the API worker's own `API_TOKEN` was NOT actually
+  rotated yet, rotate both together.
+
+## 2026-07-03 — Latent: Access OTP lockout; charlie@ inbound email dead since ~Apr 21
 
 ### Root cause chain (app itself is healthy)
 - `dashboard.florencescservices.com` is the site admin. Serving chain:
@@ -36,7 +82,9 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
   stopped working ~2026-04-21.** Gmail shows hundreds of forwarded charlie@
   emails up to Apr 21 and zero after Apr 22. Outbound mail still works
   (Gmail "send as" alias), which masked the breakage for months.
-- Net effect: login can never complete → dashboard "doesn't load".
+- Net effect: once the current Access session cookie expires, login can
+  never complete — fix the email routing (or add the Gmail to the policy)
+  BEFORE that happens.
 - Verified healthy while diagnosing: Pages deploy + JS bundle (API base
   `/api`, no token baked in — correct), CRM API `/health` 200 (v2.24.0),
   DNS (MX still `route1-3.mx.cloudflare.net`), public site unaffected.
