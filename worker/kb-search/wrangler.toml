@@ -1,0 +1,33 @@
+name = "kb-search"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Reindex nightly at 07:30 UTC (after d1-backup). Safe to remove if you prefer
+# to reindex only on demand via POST /reindex.
+[triggers]
+crons = ["30 7 * * *"]
+
+[vars]
+EMBED_MODEL = "@cf/baai/bge-base-en-v1.5"
+
+# Knowledge source — the EATON institutional-memory tables.
+[[d1_databases]]
+binding = "DB"
+database_name = "eaton-ehs-dashboard"
+database_id = "62ce85d7-0cc1-4832-aa57-d5b09ceaa132"
+
+# Workers AI — generates the embeddings (bge-base-en-v1.5 = 768 dims).
+[ai]
+binding = "AI"
+
+# Vectorize index. Create once with:
+#   wrangler vectorize create eaton-kb --dimensions=768 --metric=cosine
+# (or run the "Setup R2 bucket + Vectorize index" GitHub Action)
+[[vectorize]]
+binding = "VEC"
+index_name = "eaton-kb"
+
+# Secret (recommended) — locks /reindex and /search:
+#   wrangler secret put API_TOKEN
+# or set repo secret KB_API_TOKEN and let the deploy Action sync it.

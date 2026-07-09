@@ -1,0 +1,38 @@
+name: Deploy d1-backup
+
+# Deploys the d1-backup Worker when its source changes on main.
+# Runs on GitHub's runners so it works even when a local/cloud session can't
+# reach api.cloudflare.com.
+#
+# Required repo secret: CLOUDFLARE_API_TOKEN (Workers + D1 + R2 edit).
+# Optional repo secret: BACKUP_API_TOKEN — synced to the worker to lock the
+#   manual /backup and /backups endpoints.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/d1-backup/**'
+      - '.github/workflows/deploy-d1-backup.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/d1-backup
+      - name: Sync API_TOKEN worker secret
+        working-directory: worker/d1-backup
+        env:
+          BACKUP_API_TOKEN: ${{ secrets.BACKUP_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$BACKUP_API_TOKEN" ]; then
+            printf '%s' "$BACKUP_API_TOKEN" | npx wrangler secret put API_TOKEN
+          else
+            echo "BACKUP_API_TOKEN not set — manual endpoints stay open until it is added"
+          fi
