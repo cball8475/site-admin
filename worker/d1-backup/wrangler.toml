@@ -27,6 +27,16 @@ binding = "DB_FAMILY"
 database_name = "ball-family-hq"
 database_id = "2f3c54ae-5da6-413d-af46-76e008d3ac1c"
 
+[[d1_databases]]
+binding = "DB_BHE"
+database_name = "before-human-error"
+database_id = "06f4ca9c-7089-434b-a34a-b4c4803d23a7"
+
+[[d1_databases]]
+binding = "DB_TINY"
+database_name = "tiny-mountain-65c7"
+database_id = "18788c94-4b72-471b-b186-e09c1d37b2e9"
+
 # ── Backup destination ──
 # Create once with: wrangler r2 bucket create d1-backups
 # (or run the "Setup R2 bucket + Vectorize index" GitHub Action)

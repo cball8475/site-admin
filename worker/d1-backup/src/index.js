@@ -11,6 +11,8 @@ const SOURCES = [
   { binding: "DB_EATON", name: "eaton-ehs-dashboard" },
   { binding: "DB_CRM", name: "florence-crm" },
   { binding: "DB_FAMILY", name: "ball-family-hq" },
+  { binding: "DB_BHE", name: "before-human-error" },
+  { binding: "DB_TINY", name: "tiny-mountain-65c7" },
 ];
 
 const CORS = {
