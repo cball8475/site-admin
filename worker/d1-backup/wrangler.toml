@@ -1,0 +1,39 @@
+name = "d1-backup"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Nightly at 07:10 UTC (~03:10 ET). Dumps each D1 database below to R2 and
+# prunes snapshots older than RETENTION_DAYS.
+[triggers]
+crons = ["10 7 * * *"]
+
+[vars]
+RETENTION_DAYS = "30"
+
+# ── Source databases (keep in sync with SOURCES in src/index.js) ──
+[[d1_databases]]
+binding = "DB_EATON"
+database_name = "eaton-ehs-dashboard"
+database_id = "62ce85d7-0cc1-4832-aa57-d5b09ceaa132"
+
+[[d1_databases]]
+binding = "DB_CRM"
+database_name = "florence-crm"
+database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
+
+[[d1_databases]]
+binding = "DB_FAMILY"
+database_name = "ball-family-hq"
+database_id = "2f3c54ae-5da6-413d-af46-76e008d3ac1c"
+
+# ── Backup destination ──
+# Create once with: wrangler r2 bucket create d1-backups
+# (or run the "Setup R2 bucket + Vectorize index" GitHub Action)
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "d1-backups"
+
+# Secret (optional but recommended) — locks POST /backup and GET /backups:
+#   wrangler secret put API_TOKEN
+# or set repo secret BACKUP_API_TOKEN and let the deploy Action sync it.

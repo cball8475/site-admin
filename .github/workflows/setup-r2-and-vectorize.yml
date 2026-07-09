@@ -1,0 +1,25 @@
+name: Setup R2 bucket + Vectorize index (one-time)
+
+# One-time provisioning for d1-backup and kb-search, run from GitHub's runners
+# so no local wrangler is needed. Idempotent — safe to re-run.
+#
+# PREREQUISITE: enable R2 once in the Cloudflare dashboard (R2 -> Enable).
+# The bucket-create step will fail with a clear message until you do.
+#
+# Required repo secret: CLOUDFLARE_API_TOKEN with R2 + Vectorize edit permissions.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Install wrangler
+        run: npm i -g wrangler
+      - name: Create R2 bucket d1-backups (idempotent)
+        run: wrangler r2 bucket create d1-backups || echo "bucket exists, or R2 is not enabled yet (enable it in the dashboard)"
+      - name: Create Vectorize index eaton-kb (idempotent)
+        run: wrangler vectorize create eaton-kb --dimensions=768 --metric=cosine || echo "index already exists"

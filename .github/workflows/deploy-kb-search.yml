@@ -1,0 +1,37 @@
+name: Deploy kb-search
+
+# Deploys the kb-search Worker when its source changes on main.
+# Runs on GitHub's runners so it works even when a local/cloud session can't
+# reach api.cloudflare.com.
+#
+# Required repo secret: CLOUDFLARE_API_TOKEN (Workers + D1 + Vectorize + Workers AI).
+# Optional repo secret: KB_API_TOKEN — synced to the worker to lock /reindex and /search.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/kb-search/**'
+      - '.github/workflows/deploy-kb-search.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/kb-search
+      - name: Sync API_TOKEN worker secret
+        working-directory: worker/kb-search
+        env:
+          KB_API_TOKEN: ${{ secrets.KB_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$KB_API_TOKEN" ]; then
+            printf '%s' "$KB_API_TOKEN" | npx wrangler secret put API_TOKEN
+          else
+            echo "KB_API_TOKEN not set — /reindex and /search stay open until it is added"
+          fi
