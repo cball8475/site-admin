@@ -29,7 +29,7 @@
 
 import { WorkerEntrypoint } from "cloudflare:workers";
 
-var VERSION = "2.0.0";
+var VERSION = "2.1.0";
 var FROM_EMAIL = "charlie@florencescservices.com";
 var FROM_NAME = "Charlie — Florence SC Services";
 var DIGEST_TO = "charlie@florencescservices.com";
@@ -119,8 +119,9 @@ var CHAIN_PATTERNS = [
   /waste management/i, /\bwm\b(?![a-z])/i, /republic services/i, /waste connections/i,
   /\bgfl\b/i, /green for life/i, /waste pro/i, /casella/i, /rumpke/i, /advanced disposal/i,
   /1[\s-]?800[\s-]?got[\s-]?junk/i, /college hunks/i, /junk king/i, /junkluggers/i,
-  /bin there dump that/i, /redbox\+/i, /smash my trash/i,
-  /budget dumpster/i, /dumpsters\.com/i, /hometown dumpster/i, /vine disposal/i
+  /bin there dump that/i, /redbox\+/i, /smash my trash/i, /servpro/i, /servicemaster/i,
+  /budget dumpster/i, /dumpsters\.com/i, /hometown dumpster/i, /vine disposal/i,
+  /capital waste/i
 ];
 var CHAIN_DOMAINS = [
   "wm.com", "republicservices.com", "wasteconnections.com", "gflenv.com",
@@ -128,8 +129,21 @@ var CHAIN_DOMAINS = [
   "collegehunkshaulingjunk.com", "junk-king.com", "junkluggers.com",
   "bintheredumpthat.com", "budgetdumpster.com", "dumpsters.com",
   "hometowndumpster.com", "angi.com", "thumbtack.com", "yelp.com", "networx.com",
-  "homeadvisor.com", "porch.com"
+  "homeadvisor.com", "porch.com", "capitalwaste.com", "servpro.com"
 ];
+// Disposal facilities / government sites — places you DUMP at, not operators
+// who rent out dumpsters or haul junk. Never pitch these.
+var FACILITY_PATTERNS = [
+  /landfill/i, /transfer station/i, /recycling? cent(er|re)/i, /convenience cent(er|re)/i,
+  /\bcounty\b/i, /municipal/i, /public works/i, /solid waste authority/i
+];
+// Places text search drifts into adjacent categories (maids, pressure
+// washing, laundromats under "cleanout service"). The business must actually
+// look like the vertical before we ever contact it.
+var RELEVANT_PATTERNS = {
+  dumpster: /dumpster|roll[\s-]?off|container|waste|disposal|trash|debris|junk|sanitation|\bbins?\b/i,
+  hauling: /junk|haul|removal|clean[\s-]?out|debris|trash|waste|disposal|dumpster|demolition|scrap/i
+};
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 var CORS = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
@@ -463,6 +477,12 @@ function classifyCandidate(c, existing) {
   if (CHAIN_PATTERNS.some((p) => p.test(name)) || CHAIN_DOMAINS.some((d) => host === d || host.endsWith("." + d))) {
     return { verdict: "reject", reason: "national_chain_or_franchise" };
   }
+  if (FACILITY_PATTERNS.some((p) => p.test(name))) {
+    return { verdict: "reject", reason: "disposal_facility_or_government" };
+  }
+  if (!RELEVANT_PATTERNS[c.vertical || "dumpster"].test(name + " " + host)) {
+    return { verdict: "reject", reason: "not_relevant_to_vertical" };
+  }
   if (c.businessStatus && c.businessStatus !== "OPERATIONAL") {
     return { verdict: "reject", reason: "not_operational" };
   }
@@ -568,15 +588,18 @@ async function zoneOpenFor(env, zone, vertical) {
   return (row?.c || 0) === 0;
 }
 
-// ── Phase chaining ───────────────────────────────────────────────────────────
-// Each phase re-invokes this worker over HTTP so every phase gets a fresh
-// subrequest budget. Self-authed with the worker's own CRM token.
-function chain(env, ctx, phase, runId, dry) {
-  const url = `${PUBLIC_URL}/trigger?phase=${phase}&run=${encodeURIComponent(runId)}${dry ? "&dry=1" : ""}`;
-  const p = fetch(url, { method: "POST", headers: { Authorization: `Bearer ${env.CRM_API_TOKEN}` } })
-    .catch((e) => logRow(env, { run_id: runId, event: "error", detail: { where: `chain_${phase}`, error: e.message } }));
-  if (ctx && ctx.waitUntil) ctx.waitUntil(p);
-  return p;
+// ── Pipeline orchestration ──────────────────────────────────────────────────
+// All phases run inline in one invocation (the account is on the Workers paid
+// plan — the subrequest/CPU budget is ample, and a worker cannot fetch its own
+// public hostname, so HTTP self-chaining is off the table). Process drains the
+// queue in small batches with a hard cap as a runaway guard.
+async function runFull(env, ctx, runId, dry) {
+  const out = {};
+  out.discover = await runDiscover(env, ctx, runId, dry);
+  out.process = await runProcess(env, ctx, runId, dry);
+  out.send = await runSend(env, ctx, runId, dry);
+  out.digest = await runDigest(env, ctx, runId, dry);
+  return out;
 }
 
 // ── Phase: discover ──────────────────────────────────────────────────────────
@@ -587,7 +610,6 @@ async function runDiscover(env, ctx, runId, dry) {
   const { key, source: keySource } = await getPlacesKey(env);
   if (!key) {
     await logRow(env, { run_id: runId, event: "error", detail: { where: "discover", error: "no GOOGLE_PLACES_API_KEY (env or d1 config) — discovery skipped" } });
-    await chain(env, ctx, "send", runId, dry);
     return { discovered: 0, queued: 0, rejected: 0, skipped: "no_places_key" };
   }
   await ensureSchema(env.DB);
@@ -642,18 +664,30 @@ async function runDiscover(env, ctx, runId, dry) {
     await logRow(env, { run_id: runId, event: "discovered", place_id: c.place_id, name: c.name, zone: c.zone, detail: { vertical: c.vertical, phone: c.phone || null, website: c.website || null, rating: c.rating, reviews: c.reviews } });
   }
   await logRow(env, { run_id: runId, event: "discover_done", detail: { found: candidates.size, queued, rejected, already_known: skipped, query_errors: queryErrors, key_source: keySource } });
-  await chain(env, ctx, "process", runId, dry);
   return { found: candidates.size, queued, rejected, skipped };
 }
 
-// ── Phase: process (email-find → add → enroll, in batches) ──────────────────
+// ── Phase: process (email-find → add → enroll; drains the queue) ────────────
 async function runProcess(env, ctx, runId, dry) {
   await ensureSchema(env.DB);
-  const { results: rows } = await env.DB.prepare("SELECT place_id, payload FROM outreach_queue WHERE status = 'pending' LIMIT ?").bind(PROCESS_BATCH).all();
-  if (!rows || rows.length === 0) {
-    await chain(env, ctx, "send", runId, dry);
-    return { processed: 0, done: true };
+  let added = 0, enrolled = 0, rejected = 0, processed = 0;
+  // Batched drain with a hard cap: worst case ~14 batches × 6 candidates ×
+  // ~6 fetches ≈ 500 subrequests, inside the paid-plan budget.
+  for (let batch = 0; batch < 14; batch++) {
+    const { results: rows } = await env.DB.prepare("SELECT place_id, payload FROM outreach_queue WHERE status = 'pending' LIMIT ?").bind(PROCESS_BATCH).all();
+    if (!rows || rows.length === 0) break;
+    const r = await processBatch(env, runId, rows);
+    added += r.added; enrolled += r.enrolled; rejected += r.rejected; processed += rows.length;
   }
+  const { results: left } = await env.DB.prepare("SELECT COUNT(*) AS c FROM outreach_queue WHERE status = 'pending'").all();
+  const remaining = left?.[0]?.c || 0;
+  if (remaining > 0) {
+    await logRow(env, { run_id: runId, event: "process_deferred", detail: { remaining, note: "batch cap hit — remaining candidates process next run" } });
+  }
+  await logRow(env, { run_id: runId, event: "process_done", detail: { processed, added, enrolled, rejected, remaining } });
+  return { processed, added, enrolled, rejected, remaining };
+}
+async function processBatch(env, runId, rows) {
   let added = 0, enrolled = 0, rejected = 0;
   for (const row of rows) {
     let c;
@@ -719,11 +753,7 @@ async function runProcess(env, ctx, runId, dry) {
       await env.DB.prepare("UPDATE outreach_queue SET status = 'error', processed_at = datetime('now'), note = ? WHERE place_id = ?").bind(String(e.message).slice(0, 200), row.place_id).run();
     }
   }
-  // More pending? Keep chaining process; otherwise move to sends.
-  const { results: left } = await env.DB.prepare("SELECT COUNT(*) AS c FROM outreach_queue WHERE status = 'pending'").all();
-  const remaining = left?.[0]?.c || 0;
-  await chain(env, ctx, remaining > 0 ? "process" : "send", runId, dry);
-  return { processed: rows.length, added, enrolled, rejected, remaining };
+  return { added, enrolled, rejected };
 }
 
 // ── Phase: send due sequence steps ───────────────────────────────────────────
@@ -739,7 +769,6 @@ async function runSend(env, ctx, runId, dry) {
   }
   if (paused) {
     await logRow(env, { run_id: runId, event: "sends_skipped", detail: { reason: env.OUTREACH_PAUSED === "true" ? "env_paused" : dry ? "dry_run" : "toggle_paused", due_count: due.length, would_send: due.filter((p) => p.email && p.sequence).slice(0, 20).map((p) => ({ name: p.short_name || p.name, step: p.sequence_step })) } });
-    await chain(env, ctx, "digest", runId, dry);
     return { paused: true, due: due.length };
   }
   let sent = 0, failed = 0, skipped = 0;
@@ -794,7 +823,6 @@ async function runSend(env, ctx, runId, dry) {
     }
   }
   await logRow(env, { run_id: runId, event: "send_done", detail: { sent, failed, skipped, due: due.length } });
-  await chain(env, ctx, "digest", runId, dry);
   return { sent, failed, skipped, due: due.length };
 }
 
@@ -874,6 +902,7 @@ async function runDigest(env, ctx, runId, dry) {
 
 async function runPhase(env, ctx, phase, runId, dry) {
   switch (phase) {
+    case "full": return runFull(env, ctx, runId, dry);
     case "discover": return runDiscover(env, ctx, runId, dry);
     case "process": return runProcess(env, ctx, runId, dry);
     case "send": return runSend(env, ctx, runId, dry);
@@ -906,7 +935,8 @@ export default {
   async scheduled(event, env, ctx) {
     const runId = newRunId();
     console.log(`cron ${event.cron} → run ${runId}`);
-    await runDiscover(env, ctx, runId, false);
+    const result = await runFull(env, ctx, runId, false);
+    console.log(`run ${runId} finished:`, JSON.stringify(result));
   },
 
   async fetch(request, env, ctx) {
@@ -981,13 +1011,17 @@ export default {
 
     if (path === "/trigger" && request.method === "POST") {
       if (!authed) return need();
-      const phase = url.searchParams.get("phase") || "discover";
+      const phase = url.searchParams.get("phase") || "full";
       const runId = url.searchParams.get("run") || newRunId();
       const dry = url.searchParams.get("dry") === "1";
-      if (phase === "discover") {
-        // Full pipeline: kick off and let the phases chain in the background.
-        ctx.waitUntil(runDiscover(env, ctx, runId, dry));
-        return json({ ok: true, run_id: runId, started: "discover", dry, note: "phases chain automatically; watch /outreach-log" });
+      if (phase === "full" || phase === "discover") {
+        // Full pipeline runs in the background — can take minutes when the
+        // queue is deep (website scraping). Watch /outreach-log for progress.
+        ctx.waitUntil(runFull(env, ctx, runId, dry).then(
+          (r) => console.log(`run ${runId} finished:`, JSON.stringify(r)),
+          (e) => logRow(env, { run_id: runId, event: "error", detail: { where: "runFull", error: e.message } })
+        ));
+        return json({ ok: true, run_id: runId, started: "full", dry, note: "pipeline running in background; watch /outreach-log" });
       }
       const result = await runPhase(env, ctx, phase, runId, dry);
       return json({ ok: true, run_id: runId, phase, result });
