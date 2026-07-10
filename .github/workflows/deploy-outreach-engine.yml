@@ -20,6 +20,10 @@ on:
         description: 'Also send a production-path test email to Charlie'
         type: boolean
         default: false
+      dry_run:
+        description: 'Kick a full pipeline dry-run after deploy (no prospect emails; digest still sends)'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -65,6 +69,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SEND_TEST: ${{ github.event.inputs.send_test_email }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           SMOKE=$(openssl rand -hex 16)
           printf '%s' "$SMOKE" | npx wrangler secret put SMOKE_TOKEN
@@ -75,4 +80,10 @@ jobs:
             echo "— /test-email —"
             curl -sSf -X POST -H "Authorization: Bearer $SMOKE" \
               https://florence-auto-outreach-emails.cball8475.workers.dev/test-email
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "— /trigger (dry run) —"
+            curl -sSf -X POST -H "Authorization: Bearer $SMOKE" \
+              "https://florence-auto-outreach-emails.cball8475.workers.dev/trigger?dry=1"
+            echo "dry run kicked — phases chain in the background; results land in outreach_log + the digest email"
           fi
