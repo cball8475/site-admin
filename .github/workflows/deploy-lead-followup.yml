@@ -1,0 +1,26 @@
+name: Deploy florence-lead-followup
+
+# Mirrors deploy-worker.yml. Required repo secret: CLOUDFLARE_API_TOKEN.
+# Depends on florence-auto-outreach-emails being deployed (Mailer binding).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/florence-lead-followup/**'
+      - '.github/workflows/deploy-lead-followup.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/florence-lead-followup
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sSf https://florence-lead-followup.cball8475.workers.dev/health

@@ -1,16 +1,38 @@
-# React + Vite
+# site-admin — Florence SC Services
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The admin dashboard + every Cloudflare Worker behind
+[florencescservices.com](https://florencescservices.com)'s two-sided local
+lead marketplace. **Start with [SYSTEM.md](SYSTEM.md)** — architecture, the
+daily automation flow, runbook, and the outreach sequence copy.
+[SMOKE-TEST.md](SMOKE-TEST.md) is the verification evidence from the 2026-07
+rebuild.
 
-Currently, two official plugins are available:
+## Layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+| Path | What |
+|---|---|
+| `src/` | React/Vite admin dashboard → Cloudflare Pages (`florence-dashboard`), served at dashboard.florencescservices.com behind Cloudflare Access |
+| `worker/florence-crm-api/` | The hub: prospects, leads, webhooks (CallRail/Twilio/Mercury), outreach log/suppression/toggle — `api.florencescservices.com` |
+| `worker/florence-auto-outreach-emails/` | The outreach engine: daily discovery → filter → email-find → add → enroll → send → digest; holds the Resend key + `Mailer` RPC |
+| `worker/florence-lead-followup/` | Mon–Fri operator nudges on unworked leads (24/72/120 h) |
+| `worker/florence-outreach/` | Secured Claude proxy for dashboard copy-gen |
+| `worker/florence-dashboard-proxy/` | Access-gated front door: static from Pages + token-injecting `/api` `/engine` `/outreach` proxies |
+| `worker/d1-backup/`, `worker/kb-search/` | Nightly D1 backups; knowledge-base search |
+| `kb/` | Durable memory (see `kb/fsc-memory.md`) |
+| `data/` | Legacy pre-D1 outreach artifacts (read-only history) |
 
-## React Compiler
+## Deploys
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Push to `main` — each worker has a path-filtered workflow in
+`.github/workflows/` (`cloudflare/wrangler-action`, repo secret
+`CLOUDFLARE_API_TOKEN`); the dashboard publishes via `deploy-dashboard.yml`.
+Secrets live in Cloudflare (names in each `wrangler.toml`), never in this
+public repo.
 
-## Expanding the ESLint configuration
+## Dashboard dev
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```sh
+npm install && npm run dev
+# direct-API dev needs: VITE_CRM_API_URL, VITE_CRM_API_TOKEN,
+# VITE_ENGINE_URL, VITE_OUTREACH_URL (prod uses same-origin proxy paths)
+```

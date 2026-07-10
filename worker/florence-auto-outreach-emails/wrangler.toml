@@ -1,0 +1,43 @@
+name = "florence-auto-outreach-emails"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+# Account ID is not a secret (it appears in dashboard URLs); the API token is.
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# D1 — same florence-crm database the CRM API uses. The engine writes its
+# audit trail (outreach_log), suppression list, discovery queue and kill-switch
+# toggle directly; prospect/enrollment business logic still goes through the
+# CRM API so activity history stays consistent.
+[[d1_databases]]
+binding = "DB"
+database_name = "florence-crm"
+database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
+
+# Cron — Mon–Fri 12:00 UTC (8:00 AM ET): discover → filter → email-find →
+# add → enroll → send due steps → daily digest. Each phase re-invokes the
+# worker over HTTP (self-authed with CRM_API_TOKEN) to stay inside per-request
+# subrequest limits. MUST stay declared here or `wrangler deploy` drops it.
+[triggers]
+crons = ["0 12 * * 1-5"]
+
+[vars]
+# Hard kill switch (env layer). The soft switch is the D1 outreach_toggle,
+# flipped from the dashboard or POST /toggle — that one defaults to PAUSED
+# until Charlie explicitly unpauses. Set this var to "true" to force-stop
+# sends even if the D1 toggle is un-paused.
+OUTREACH_PAUSED = "false"
+
+# ---------------------------------------------------------------------------
+# Secrets (Cloudflare, never in this file; preserved across deploys):
+#   RESEND_API_KEY   — the only worker holding the Resend key; others send
+#                      through the exported `Mailer` service-binding entrypoint
+#   CRM_API_TOKEN    — bearer for api.florencescservices.com (also accepted as
+#                      the admin credential on this worker's authed endpoints)
+#   UNSUB_SECRET     — HMAC signing for one-click unsubscribe links (optional)
+#   ADMIN_SECRET     — optional extra admin bearer
+#   SMOKE_TOKEN      — rotated by CI on each deploy for smoke tests (optional)
+#   GOOGLE_PLACES_API_KEY — server-side Places discovery. Fallback: D1
+#                      data_store key 'google_places_api_key' (see SYSTEM.md)
+# Optional vars: FROM_EMAIL, FROM_NAME, CRM_API_URL (defaults in code)
+# ---------------------------------------------------------------------------

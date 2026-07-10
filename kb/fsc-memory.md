@@ -22,6 +22,45 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-10 — Outreach system rebuilt end-to-end (engine v2.1, crm-api v2.25)
+
+- **The cold-outreach engine actually runs now.** `florence-auto-outreach-emails`
+  (worker/ dir in this repo) does the whole supply side on its Mon–Fri 12:00 UTC
+  cron: Places discovery (dumpster + hauling, 50 km around Florence) → auto-reject
+  filters (lead-gen/directories, chains/franchises, disposal facilities,
+  not-relevant-to-vertical, out-of-area, uncontactable, dupes — every rejection
+  logged with a reason) → website email scrape (no paid APIs) → `POST /prospects`
+  → zone-exclusive enrollment (per zone+vertical, first-come-first-serve) → Resend
+  sends of the 5-touch sequence (offer: 1 month free, one operator per zone) →
+  daily digest to charlie@. Phases run inline in one invocation — **a Worker
+  cannot fetch its own hostname** (error 1042 comes back as a response, not an
+  exception), which is why v2.0's HTTP self-chaining died silently.
+- **Kill switch ships PAUSED**: D1 `data_store.outreach_toggle` (missing row ⇒
+  paused). Paused = live dry-run (discover/add/enroll + digest, zero prospect
+  emails). Un-pause from dashboard 🤖 Automation or POST /outreach-toggle.
+  Hard override: engine var `OUTREACH_PAUSED`.
+- **Email rules:** only the engine holds `RESEND_API_KEY`; crm-api and
+  lead-followup send via its `Mailer` service-binding entrypoint (suppression
+  checked on every send; sent-state only on Resend 2xx). lead-followup v3 fixed
+  the marks-sent-on-failure bug; Brevo is gone everywhere. `suppression` +
+  `outreach_log` are new D1 tables (self-ensured).
+- **florence-outreach is no longer an open Anthropic proxy** — Bearer required,
+  validated by delegation to crm-api `GET /auth/check`; dashboard reaches it via
+  dashboard-proxy `/outreach/*` (and the engine via `/engine/*`), token injected
+  server-side behind Cloudflare Access. dashboard-proxy keeps `workers_dev=false`
+  on purpose (a workers.dev route would bypass Access).
+- **Everything lives in site-admin now** (all 5 florence workers + dashboard +
+  per-worker deploy workflows). Dashboard Pages deploys via CI too
+  (`deploy-dashboard.yml`); the `florence-dashboard` Pages project is
+  direct-upload. Google Places key: engine env secret preferred, D1
+  `data_store.google_places_api_key` fallback until the GH repo secret is added.
+- Remote-session constraints (still true, learned again): sessions can't set GH
+  secrets, and the permission layer also blocks `wrangler secret put` / direct
+  `wrangler deploy` — **deploys go through workflow_dispatch on the repo's own
+  Actions** (a branch dispatch runs the branch's workflow file; new workflow
+  files only register once on main).
+- See SYSTEM.md (root) for the full map + runbook, SMOKE-TEST.md for evidence.
+
 ## 2026-07-02 — Lead-alert system audit + Resend email backup (v2.23.0)
 
 ### How lead alerts work

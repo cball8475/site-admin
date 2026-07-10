@@ -300,8 +300,8 @@ __name(sendCustomerSMS, "sendCustomerSMS");
 var LEAD_ALERT_TO = "cball8475@gmail.com";
 var LEAD_ALERT_FROM = "leads@florencescservices.com";
 async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, score, source }, leadId, smsResult) {
-  if (!env.RESEND_API_KEY) {
-    console.warn("RESEND_API_KEY not set — lead alert email skipped");
+  if (!env.RESEND_API_KEY && !env.MAILER) {
+    console.warn("RESEND_API_KEY not set and no MAILER binding — lead alert email skipped");
     return { sent: false, reason: "resend_key_missing" };
   }
   const zoneLabel = zone ? `Zone ${zone}` : "Unknown zone";
@@ -322,6 +322,25 @@ async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, 
     ``,
     `Reply by text from your cell: RESPONDED ${leadId} / BOOKED ${leadId} / LOST ${leadId}`
   ].join("\n");
+  const from = `FSC Leads <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`;
+  const to = env.LEAD_ALERT_TO || LEAD_ALERT_TO;
+  const subject = `FSC NEW LEAD #${leadId} — ${String(score).toUpperCase()} — ${city || "unknown city"} (${zoneLabel})`;
+  if (!env.RESEND_API_KEY && env.MAILER) {
+    // No direct Resend key here — send through the outreach engine's Mailer
+    // service binding (florence-auto-outreach-emails holds the key).
+    try {
+      const r = await env.MAILER.send({ to, from, subject, text: body, kind: "owner_alert" });
+      if (r && r.ok) {
+        console.log(`Lead alert email sent via MAILER for lead #${leadId} (${r.id || "no-id"})`);
+        return { sent: true, id: r.id || null, via: "mailer" };
+      }
+      console.error(`Lead alert email via MAILER failed: ${JSON.stringify(r).slice(0, 300)}`);
+      return { sent: false, reason: (r && r.reason) || "mailer_failed", error: (r && r.error) || null, via: "mailer" };
+    } catch (e) {
+      console.error("Lead alert MAILER error:", e);
+      return { sent: false, reason: "mailer_exception", error: (e && e.message) || String(e), via: "mailer" };
+    }
+  }
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -330,9 +349,9 @@ async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, 
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        from: `FSC Leads <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`,
-        to: [env.LEAD_ALERT_TO || LEAD_ALERT_TO],
-        subject: `FSC NEW LEAD #${leadId} — ${String(score).toUpperCase()} — ${city || "unknown city"} (${zoneLabel})`,
+        from,
+        to: [to],
+        subject,
         text: body
       })
     });
@@ -384,12 +403,88 @@ var MEMORY_SEED = {
     "FSC memory layers: this D1 memory table + site-admin kb/fsc-memory.md + GitHub history."
   ].join("\n\n")
 };
+var MEMORY_SEED_2 = {
+  category: "infrastructure",
+  title: "2026-07-10 — outreach system rebuild (crm-api v2.25.0, engine v2)",
+  content: [
+    "Outreach rebuilt end-to-end. florence-auto-outreach-emails (engine v2) now runs the whole supply-side pipeline on its Mon-Fri 12:00 UTC cron: Google Places discovery (dumpster + hauling, 50km around Florence) -> auto-reject filters (lead-gen/directories, national chains, out-of-area, uncontactable, dupes by place_id + name+phone) -> email scrape (D1 first, then operator website homepage/contact pages) -> auto-add via POST /prospects -> auto-enroll respecting zone exclusivity per (zone, vertical) -> Resend sends of due sequence steps (marked sent ONLY on Resend 2xx) -> daily digest email to charlie@florencescservices.com. Every action is a row in D1 outreach_log (query via GET /outreach-log on this API or the engine).",
+    "Kill switch: data_store key 'outreach_toggle' (GET/POST /outreach-toggle here; also /toggle on the engine; dashboard has a switch). paused=true blocks all prospect sends but discovery/enroll/digest keep running as a dry-run. Default state on first touch is paused=true — cold email only starts after Charlie explicitly unpauses. Env var OUTREACH_PAUSED on the engine is a hard override.",
+    "Suppression: D1 table 'suppression' (endpoints /suppression GET/POST/DELETE + ?email= check). Unsubscribes (signed one-click links in every email) land here permanently and every send checks it first. CAN-SPAM footer (postal address + unsubscribe) on every outreach email.",
+    "Email plumbing: RESEND_API_KEY lives on florence-auto-outreach-emails; other workers send through its 'Mailer' WorkerEntrypoint service binding (MAILER) — florence-lead-followup v3 (Brevo removed, marks follow_up_N_sent only on confirmed send) and this worker's owner lead alerts fall back to MAILER when RESEND_API_KEY is absent here.",
+    "Auth: engine + florence-outreach (Claude proxy, now locked down) accept the CRM bearer token; florence-outreach validates callers against GET /auth/check on this API. Dashboard reaches them through florence-dashboard-proxy routes /engine/* and /outreach/* (token injected server-side, behind Cloudflare Access).",
+    "All five workers + dashboard live in site-admin (worker/* dirs, per-worker GitHub Actions deploys). See SYSTEM.md in the repo root for architecture, runbook, and the 5-touch sequence copy (offer: 1 month free, one operator per zone, first-come-first-serve on zones)."
+  ].join("\n\n")
+};
 async function ensureMemorySeed(db) {
   await db.prepare(MEMORY_TABLE_SQL).run();
   await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)")
     .bind(MEMORY_SEED.category, MEMORY_SEED.title, MEMORY_SEED.content).run();
+  await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)")
+    .bind(MEMORY_SEED_2.category, MEMORY_SEED_2.title, MEMORY_SEED_2.content).run();
 }
 __name(ensureMemorySeed, "ensureMemorySeed");
+
+// --- Outreach automation support (engine v2) --------------------------------
+// Audit log + suppression list + kill-switch toggle + zone occupancy, shared
+// by florence-auto-outreach-emails (which also has its own D1 binding), the
+// dashboard, and this API. Tables are ensured lazily on first touch.
+var ZONE_NAMES = {
+  "1": "Florence",
+  "2": "Grand Strand",
+  "3": "Georgetown / Williamsburg",
+  "4": "Darlington County",
+  "5": "Marion / Dillon",
+  "6": "Chesterfield / Marlboro",
+  "7": "Sumter / Lee / Clarendon"
+};
+var OUTREACH_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS outreach_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT DEFAULT (datetime('now')),
+    run_id TEXT,
+    source TEXT DEFAULT 'engine',
+    event TEXT NOT NULL,
+    prospect_id TEXT,
+    place_id TEXT,
+    name TEXT,
+    email TEXT,
+    zone TEXT,
+    detail TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_ts ON outreach_log(ts)`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_event ON outreach_log(event)`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_run ON outreach_log(run_id)`,
+  `CREATE TABLE IF NOT EXISTS suppression (
+    email TEXT PRIMARY KEY,
+    reason TEXT DEFAULT 'unsubscribed',
+    prospect_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS data_store (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now')))`
+];
+var outreachSchemaReady = false;
+async function ensureOutreachSchema(db) {
+  if (outreachSchemaReady) return;
+  for (const sql of OUTREACH_TABLES_SQL) await db.prepare(sql).run();
+  outreachSchemaReady = true;
+}
+__name(ensureOutreachSchema, "ensureOutreachSchema");
+async function getOutreachToggle(db) {
+  await ensureOutreachSchema(db);
+  const row = await db.prepare("SELECT value, updated_at FROM data_store WHERE key = 'outreach_toggle'").first();
+  if (!row) {
+    // Fail safe: until Charlie explicitly unpauses, the engine treats sends as off.
+    const t = { paused: true, reason: "default safe state — never unpaused", updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: "system" };
+    await db.prepare("INSERT OR REPLACE INTO data_store (key, value, updated_at) VALUES ('outreach_toggle', ?, datetime('now'))").bind(JSON.stringify(t)).run();
+    return t;
+  }
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return { paused: true, reason: "unparseable toggle value — failing safe", updated_at: row.updated_at, updated_by: "system" };
+  }
+}
+__name(getOutreachToggle, "getOutreachToggle");
 
 // --- CallRail Voice Assist field extraction --------------------------------
 // Voice Assist / geo-routing captures the caller's intent and ZIP, but the
@@ -1111,18 +1206,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.24.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.25.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
         await ensureMemorySeed(db);
         const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
-        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -1521,6 +1616,103 @@ var worker_default = {
            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)`
         ).bind(id, body.prospect_id, body.step, body.status, body.type || null, body.recipient || null, body.reason || null).run();
         return json({ success: true }, 201);
+      }
+      if (path === "/auth/check" && method === "GET") {
+        // Reaching this line means the bearer above matched — used by other
+        // workers (florence-outreach, lead-followup) to validate caller tokens.
+        return json({ ok: true });
+      }
+      if (path === "/outreach-log" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const event = url.searchParams.get("event");
+        const runId = url.searchParams.get("run_id");
+        const day = url.searchParams.get("day");
+        const since = url.searchParams.get("since");
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "200", 10), 1e3);
+        const conds = [], vals = [];
+        if (event) { conds.push("event = ?"); vals.push(event); }
+        if (runId) { conds.push("run_id = ?"); vals.push(runId); }
+        if (day) { conds.push("date(ts) = ?"); vals.push(day); }
+        if (since) { conds.push("ts >= ?"); vals.push(since); }
+        let sql3 = "SELECT * FROM outreach_log" + (conds.length ? " WHERE " + conds.join(" AND ") : "") + " ORDER BY id DESC LIMIT ?";
+        vals.push(limit);
+        const { results } = await db.prepare(sql3).bind(...vals).all();
+        return json({ log: results || [], count: (results || []).length });
+      }
+      if (path === "/outreach-log" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        if (!body.event) return err("Required: event");
+        const detail = body.detail == null ? null : typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+        const ins = await db.prepare(
+          "INSERT INTO outreach_log (run_id, source, event, prospect_id, place_id, name, email, zone, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(body.run_id || null, body.source || "api", body.event, body.prospect_id || null, body.place_id || null, body.name || null, body.email || null, body.zone || null, detail).run();
+        return json({ success: true, id: ins.meta?.last_row_id || null }, 201);
+      }
+      if (path === "/outreach-log/summary" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const day = url.searchParams.get("day") || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const { results: byEvent } = await db.prepare("SELECT event, COUNT(*) as c FROM outreach_log WHERE date(ts) = ? GROUP BY event ORDER BY c DESC").bind(day).all();
+        const { results: reasons } = await db.prepare("SELECT COALESCE(json_extract(detail, '$.reason'), 'unspecified') as reason, COUNT(*) as c FROM outreach_log WHERE date(ts) = ? AND event = 'rejected' GROUP BY reason ORDER BY c DESC").bind(day).all();
+        const { results: runs } = await db.prepare("SELECT run_id, MIN(ts) as started, MAX(ts) as ended, COUNT(*) as row_count FROM outreach_log WHERE date(ts) = ? AND run_id IS NOT NULL GROUP BY run_id ORDER BY started").bind(day).all();
+        return json({ day, by_event: byEvent || [], rejection_reasons: reasons || [], runs: runs || [] });
+      }
+      if (path === "/suppression" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const check = url.searchParams.get("email");
+        if (check) {
+          const email = check.trim().toLowerCase();
+          const row = await db.prepare("SELECT * FROM suppression WHERE email = ?").bind(email).first();
+          return json({ email, suppressed: !!row, entry: row || null });
+        }
+        const { results } = await db.prepare("SELECT * FROM suppression ORDER BY created_at DESC LIMIT 500").all();
+        return json({ suppression: results || [], count: (results || []).length });
+      }
+      if (path === "/suppression" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        if (!body.email) return err("Required: email");
+        const email = String(body.email).trim().toLowerCase();
+        await db.prepare(
+          "INSERT INTO suppression (email, reason, prospect_id) VALUES (?, ?, ?) ON CONFLICT(email) DO UPDATE SET reason = excluded.reason, prospect_id = COALESCE(excluded.prospect_id, suppression.prospect_id)"
+        ).bind(email, body.reason || "unsubscribed", body.prospect_id || null).run();
+        return json({ success: true, email }, 201);
+      }
+      if (path === "/suppression" && method === "DELETE") {
+        // Deliberate owner-only action (e.g. an operator asks to be re-added).
+        await ensureOutreachSchema(db);
+        const email = url.searchParams.get("email");
+        if (!email) return err("?email= required");
+        await db.prepare("DELETE FROM suppression WHERE email = ?").bind(email.trim().toLowerCase()).run();
+        return json({ success: true, removed: email.trim().toLowerCase() });
+      }
+      if (path === "/outreach-toggle" && method === "GET") {
+        return json(await getOutreachToggle(db));
+      }
+      if (path === "/outreach-toggle" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        const paused = body.paused === true || body.paused === "true" || body.paused === 1;
+        const t = { paused, reason: body.reason || null, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: body.actor || "dashboard" };
+        await db.prepare("INSERT OR REPLACE INTO data_store (key, value, updated_at) VALUES ('outreach_toggle', ?, datetime('now'))").bind(JSON.stringify(t)).run();
+        await db.prepare("INSERT INTO outreach_log (source, event, detail) VALUES (?, 'toggle', ?)").bind(t.updated_by, JSON.stringify({ paused, reason: t.reason })).run();
+        return json({ success: true, ...t });
+      }
+      if (path === "/zones/occupancy" && method === "GET") {
+        const { results: ops } = await db.prepare("SELECT id, name, default_zone, operator_status, vertical FROM prospects WHERE operator_status IN ('active', 'pilot_active') AND default_zone IS NOT NULL").all();
+        const { results: enrolledRows } = await db.prepare("SELECT default_zone, COUNT(*) as c FROM prospects WHERE sequence IS NOT NULL AND default_zone IS NOT NULL GROUP BY default_zone").all();
+        const enrolledMap = {};
+        for (const r of enrolledRows || []) enrolledMap[String(r.default_zone)] = r.c;
+        const zones = Object.entries(ZONE_NAMES).map(([z, name]) => {
+          const owners = (ops || []).filter((o) => String(o.default_zone) === z);
+          const byVertical = {};
+          for (const v of ["dumpster", "hauling"]) {
+            const owner = owners.find((o) => (o.vertical || "dumpster") === v) || null;
+            byVertical[v] = { open: !owner, operator: owner ? { id: owner.id, name: owner.name, status: owner.operator_status } : null };
+          }
+          return { zone: z, name, operators: owners.map((o) => ({ id: o.id, name: o.name, status: o.operator_status, vertical: o.vertical || "dumpster" })), by_vertical: byVertical, enrolled_prospects: enrolledMap[z] || 0 };
+        });
+        return json({ zones, zone_names: ZONE_NAMES });
       }
       if (path === "/due-actions" && method === "GET") {
         const { results } = await db.prepare(

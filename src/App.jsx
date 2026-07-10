@@ -1,24 +1,42 @@
 import { useState, useCallback, useEffect } from "react";
 import CompanySnapshot from "./components/CompanySnapshot";
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// ENV â token stays server-side. In prod, calls go same-origin
+// ══════════════════════════════════════════════════════════════
+// ENV — token stays server-side. In prod, calls go same-origin
 // through the dashboard-proxy worker, which attaches the bearer.
 // Dev still uses local env vars for direct API access.
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
 const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL || "/api";
 const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
+// Outreach engine + secured Claude proxy. In prod these are same-origin
+// paths handled by florence-dashboard-proxy (token injected server-side);
+// in dev point them at the workers.dev URLs and set VITE_CRM_API_TOKEN.
+const ENV_ENGINE_URL   = import.meta.env.VITE_ENGINE_URL || "/engine";
+const ENV_OUTREACH_URL = import.meta.env.VITE_OUTREACH_URL || "/outreach";
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// LOCALSTORAGE â fast cache only
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+async function engineFetch(path, method = "GET", body = null) {
+  const headers = { "Content-Type": "application/json" };
+  if (ENV_CRM_TOKEN) headers["Authorization"] = `Bearer ${ENV_CRM_TOKEN}`;
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${ENV_ENGINE_URL}${path}`, opts);
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Engine ${method} ${path}: ${res.status}: ${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════
+// LOCALSTORAGE — fast cache only
+// ══════════════════════════════════════════════════════════════
 function lsGet(key)       { try { const v=localStorage.getItem(key); return v?JSON.parse(v):null; } catch{ return null; } }
 function lsSet(key, val)  { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) { console.warn("lsSet failed",key,e); } }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 // CRM API CLIENT (D1-backed)
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 async function crmFetch(url, token, path, method = "GET", body = null) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -32,7 +50,7 @@ async function crmFetch(url, token, path, method = "GET", body = null) {
   return res.json();
 }
 
-// Normalize D1 field names â legacy UI field names
+// Normalize D1 field names → legacy UI field names
 // vertical defaults to "dumpster" for all existing prospects
 function normalizeProspect(p) {
   if (!p) return p;
@@ -51,9 +69,9 @@ function normalizeProspect(p) {
   };
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 // SHARED HELPERS & STYLES
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 const cleanPhone = p => p ? p.replace(/\D/g,"") : "";
 
 function ago(iso) {
@@ -91,28 +109,28 @@ const btnBase = { display:"inline-flex", alignItems:"center", gap:"0.4rem", bord
   borderRadius:7, cursor:"pointer", fontWeight:700, fontFamily:"inherit", transition:"opacity .15s",
   whiteSpace:"nowrap" };
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// VERTICALS â multi-vertical support
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
+// VERTICALS — multi-vertical support
+// ══════════════════════════════════════════════════════════════
 const VERTICALS = [
-  { id: "dumpster", label: "Dumpster Rental", color: C.blue,  icon: "ð" },
-  { id: "hauling",  label: "Junk Removal & Hauling", color: C.green, icon: "ð" },
+  { id: "dumpster", label: "Dumpster Rental", color: C.blue,  icon: "🗑" },
+  { id: "hauling",  label: "Junk Removal & Hauling", color: C.green, icon: "🚛" },
 ];
 
 // Helper: vertical config by id
 const getVertical = (id) => VERTICALS.find(v => v.id === id) || VERTICALS[0];
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 // LEAD SCORING
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 const scoreColor = s => s>=75?C.green:s>=45?C.amber:C.red;
-const scoreLabel = s => s>=75?"ð¥ Hot":s>=45?"â¡ Warm":"âï¸ Cold";
+const scoreLabel = s => s>=75?"🔥 Hot":s>=45?"⚡ Warm":"❄️ Cold";
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// BUYER CRM â CONFIG
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
+// BUYER CRM — CONFIG
+// ══════════════════════════════════════════════════════════════
 const STAGES=["prospect","contacted","pilot_offered","pilot_active","closed","dead"];
-const STAGE_LABELS={prospect:"ð¯ Prospect",contacted:"ð Contacted",pilot_offered:"ð Pilot Offered",pilot_active:"â¡ Pilot Active",closed:"ð° Closed",dead:"ð Dead"};
+const STAGE_LABELS={prospect:"🎯 Prospect",contacted:"📞 Contacted",pilot_offered:"🎁 Pilot Offered",pilot_active:"⚡ Pilot Active",closed:"💰 Closed",dead:"💀 Dead"};
 const STAGE_COLORS={prospect:C.blue,contacted:C.amber,pilot_offered:C.purple,pilot_active:"#06b6d4",closed:C.green,dead:"#6b7280"};
 
 function qualifyScore(biz) {
@@ -126,144 +144,145 @@ function qualifyScore(biz) {
 }
 
 const SEED_PROSPECTS=[
-  {place_id:"p1",name:"Lou's Contracting LLC",rating:5.0,user_ratings_total:11,formatted_phone_number:"(843) 319-8508",website:"louscontracting.com",vicinity:"1615 Misty View Ln, Florence, SC",notes:"Top target â 5 stars, active contractor"},
-  {place_id:"p2",name:"SOMO Trash LLC",rating:5.0,user_ratings_total:22,formatted_phone_number:"(843) 307-3413",website:null,vicinity:"150 Nez Perce Dr, Darlington, SC",notes:"Personal contact â easiest first buyer"},
-  {place_id:"p3",name:"Timmons Waste Service",rating:4.2,user_ratings_total:32,formatted_phone_number:"(843) 393-4884",website:"timmonswaste.com",vicinity:"433 Lawson Rd, Darlington, SC",notes:"Most reviews in area â established"},
-  {place_id:"p4",name:"Florence Co. Recycling",rating:4.4,user_ratings_total:31,formatted_phone_number:"(843) 665-3050",website:null,vicinity:"359 S Ebenezer Rd, Florence, SC",notes:"No website â needs leads badly"},
-  {place_id:"p5",name:"S&P Container Service",rating:3.5,user_ratings_total:8,formatted_phone_number:"(843) 673-0404",website:null,vicinity:"220 W Ashby Rd, Florence, SC",notes:"Lower rating â opportunity to sell quality leads"},
+  {place_id:"p1",name:"Lou's Contracting LLC",rating:5.0,user_ratings_total:11,formatted_phone_number:"(843) 319-8508",website:"louscontracting.com",vicinity:"1615 Misty View Ln, Florence, SC",notes:"Top target — 5 stars, active contractor"},
+  {place_id:"p2",name:"SOMO Trash LLC",rating:5.0,user_ratings_total:22,formatted_phone_number:"(843) 307-3413",website:null,vicinity:"150 Nez Perce Dr, Darlington, SC",notes:"Personal contact — easiest first buyer"},
+  {place_id:"p3",name:"Timmons Waste Service",rating:4.2,user_ratings_total:32,formatted_phone_number:"(843) 393-4884",website:"timmonswaste.com",vicinity:"433 Lawson Rd, Darlington, SC",notes:"Most reviews in area — established"},
+  {place_id:"p4",name:"Florence Co. Recycling",rating:4.4,user_ratings_total:31,formatted_phone_number:"(843) 665-3050",website:null,vicinity:"359 S Ebenezer Rd, Florence, SC",notes:"No website — needs leads badly"},
+  {place_id:"p5",name:"S&P Container Service",rating:3.5,user_ratings_total:8,formatted_phone_number:"(843) 673-0404",website:null,vicinity:"220 W Ashby Rd, Florence, SC",notes:"Lower rating — opportunity to sell quality leads"},
 ];
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// OUTREACH SEQUENCES â the automation engine
+// ══════════════════════════════════════════════════════════════
+// OUTREACH SEQUENCES — the automation engine
 // vertical field determines which switcher tab shows this sequence
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 const SEQUENCES = [
-  // ââ DUMPSTER RENTAL âââââââââââââââââââââââââââââââââââââââââ
+  // ── DUMPSTER RENTAL ─────────────────────────────────────────
   {
     id: "new_prospect",
     vertical: "dumpster",
-    name: "New Prospect â 5 Touch",
-    description: "Full introduction sequence: email â follow-up â value email â case study â final",
+    name: "New Prospect — 5 Touch",
+    description: "Full intro sequence: intro → follow-up → not-Angi → proof + first-come → last call. Offer: 1 month free, one operator per zone.",
     steps: [
       { day: 0, type: "email", label: "Intro Email",
-        subject: "Partner with Florence SC Services â We Send You Customers",
-        template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and contractors in the Pee Dee region with reliable dumpster rental providers.\n\nWe're getting steady inquiries from people who need dumpster rentals, and I'm looking for a dependable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
+        subject: "dumpster leads in {{city}}",
+        template: `Hi {{firstName}},\n\nI run florencescservices.com — Google "dumpster rental Florence SC" and you'll find me on page one. People needing a dumpster around {{city}} land there every week, and right now I have no local operator to send them to.\n\nThe model is simple: one operator per zone, period. Nothing gets blasted to five companies the way Angi does it. A lead from your area goes to you and nobody else.\n\nYour first month is free — no card, no contract. Work the leads, keep the jobs, then decide if it's worth paying for.\n\nWant {{company}} to be where your zone's leads go? Reply "yes" and it's yours.\n\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
       },
       { day: 2, type: "email", label: "Follow-up Email",
-        subject: "Quick follow-up â dumpster rental leads",
-        template: `Hi {{firstName}},\n\nJust circling back on my note from a few days ago. We have customers actively searching for dumpster rentals in your area.\n\nOur model is simple â we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "re: dumpster leads in {{city}}",
+        template: `Hi {{firstName}},\n\nQuick follow-up — your zone is still open on my end, which means dumpster requests from around {{city}} are coming in with no local operator attached.\n\nThe free month starts whenever you say the word. No card, no contract, just leads while you decide if they're any good.\n\nWorth a look?\n\nCharlie`
       },
-      { day: 5, type: "email", label: "Value Prop Email",
-        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending dumpster rental leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for dumpster rentals in the Pee Dee region. Rather than keeping them, we partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+      { day: 5, type: "email", label: "Not-Angi Email",
+        subject: "not another angi pitch",
+        template: `Hi {{firstName}},\n\nYou've probably been burned by lead sites: pay up front, then race four other companies to a phone number they all bought. I built the opposite.\n\nWhen someone finds my site needing a dumpster near {{city}}, that lead goes to one operator. If that's you, it's you every time. No shared leads, no bidding, no pay-per-dud.\n\nIt's also why I can only take one company per zone — and why your zone being open right now actually means something.\n\nFirst month's free to prove it. Reply and I'll set {{company}} up.\n\nCharlie`
       },
-      { day: 8, type: "email", label: "Case Study Email",
-        subject: "How {{company}} can get more dumpster jobs without ads",
-        template: `Hi {{firstName}},\n\nMost dumpster rental companies in Florence rely on word of mouth or expensive Google Ads ($15-30 per click).\n\nWe do it differently â we rank organically for "dumpster rental Florence SC" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+      { day: 8, type: "email", label: "Proof + First-Come Email",
+        subject: "what one lead turned into",
+        template: `Hi {{firstName}},\n\nReal number: back in March I sent a partner a single lead — he closed a $400 dumpster rental off it within two hours. One lead, one job, nobody else calling that customer.\n\nI bring it up because your zone is still unclaimed, and I pitch every operator in the area eventually. Zones are first come, first serve — whoever claims one locks it, free month included, and everyone else in that zone is out of luck.\n\nI'd rather it be {{company}}. Reply "claim it" and your zone comes off the market.\n\nCharlie`
       },
-      { day: 12, type: "email", label: "Final Email",
-        subject: "Last note from me â {{company}}",
-        template: `Hi {{firstName}},\n\nI've reached out a few times about sending dumpster rental leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply to this and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
+      { day: 12, type: "email", label: "Last Call Email",
+        subject: "closing the loop",
+        template: `Hi {{firstName}},\n\nLast note from me — you run a real business and I'm not going to keep cluttering the inbox.\n\nThe offer stands while your zone stays open: exclusive dumpster leads, one operator per zone, first month free, no card, no contract. The day someone else claims it, it's gone and you won't hear about it from me again.\n\nIf it's ever a fit, just reply. Either way — busy season to you.\n\nCharlie\nFlorence SC Services`
       },
     ]
   },
   {
     id: "re_engage",
     vertical: "dumpster",
-    name: "Re-engage â Dead Leads",
+    name: "Re-engage — Dead Leads",
     description: "Wake up prospects who went cold. 3 touches over 2 weeks.",
     steps: [
       { day: 0, type: "email", label: "Check-in Email",
-        subject: "Still sending dumpster leads in Florence â room for one more partner",
-        template: `Hi {{firstName}},\n\nWe connected a while back about sending dumpster rental leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "your zone opened back up",
+        template: `Hi {{firstName}},\n\nWe talked a while back about sending dumpster leads to {{company}} — timing wasn't right. Since then the site's grown and your zone is open again.\n\nSame deal, still simple: exclusive leads, one operator per zone, first month free, no card, no contract. First come, first serve.\n\nWant it before someone else takes it?\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Quick Call",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about leads â just wanted to see if now might be better timing for you. We've got more volume now and room for one more partner. Quick 2-minute call worth it?`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about dumpster leads — your zone's open again and I'd rather hand it to you than a stranger. One operator per zone, first month free, no card. Two minutes to talk it through?`
       },
       { day: 12, type: "sms", label: "Final Text",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have dumpster rental leads if you want to test it out â 2 free, no strings. Just reply YES and I'll send them your way.`
+        template: `Hey {{firstName}}, Charlie w/ Florence SC Services. Your zone's open again — exclusive dumpster leads, first month free, no strings. Reply YES and I'll switch them on.`
       },
     ]
   },
   {
     id: "pilot_followup",
     vertical: "dumpster",
-    name: "Pilot Follow-up",
-    description: "After sending free leads â convert to paid.",
+    name: "Free-Month Follow-up",
+    description: "During/after the free trial month — convert to paid.",
     steps: [
-      { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you X exclusive leads per month for your area. Pricing starts at $45/lead or $297/month for a set number. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+      { day: 0, type: "call", label: "Trial Check-in Call",
+        template: `Hey {{firstName}}, Charlie here. Just checking in on the leads from your free month. How'd they go?\n\n[IF GOOD] Awesome. So here's how it works after the trial — you keep the zone, exclusive, same lead flow. Pricing starts at $45/lead or $297/month for a set number. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries — did you get a chance to call them back? The faster they get a call, the more of them book. I can resend anything you missed.`
       },
-      { day: 3, type: "email", label: "Pilot Results + Offer",
-        subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ $45/lead (pay per lead) or $297/mo for a set volume\nâ¢ You're the only partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+      { day: 3, type: "email", label: "Trial Results + Offer",
+        subject: "your free month + next steps",
+        template: `Hi {{firstName}},\n\nHope the free-month leads worked out well for {{company}}.\n\nKeeping the zone is simple:\n\n• Exclusive leads — you stay the only operator in your zone\n• $45/lead (pay per lead) or $297/mo for a set volume\n• Cancel anytime, the zone just goes back on the market\n\nWant to lock your zone in before I open it back up?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
-        template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
+        template: `Hey {{firstName}}, following up on the details I sent over. Any questions? Fair warning — if the trial lapses the zone goes back on the market, and I've got other operators asking about it. You were here first, so you get first shot. What do you think?`
       },
     ]
   },
 
-  // ââ JUNK REMOVAL & HAULING âââââââââââââââââââââââââââââââââââ
+  // ── JUNK REMOVAL & HAULING ───────────────────────────────────
   {
     id: "hauling_new_prospect",
     vertical: "hauling",
-    name: "New Prospect â Hauling (5 Touch)",
-    description: "Full intro sequence for junk removal & hauling operators",
+    name: "New Prospect — Hauling (5 Touch)",
+    description: "Full intro sequence for junk removal & hauling operators. Offer: 1 month free, one operator per zone.",
     steps: [
       { day: 0, type: "email", label: "Intro Email",
-        subject: "Partner with Florence SC Services â Junk Removal Leads",
-        template: `Hi {{firstName}},\n\nI'm Charlie with Florence SC Services. We connect homeowners and property managers in the Pee Dee region with local junk removal and hauling providers.\n\nWe're getting steady inquiries from people who need junk removal, cleanouts, and hauling work, and I'm looking for a reliable local operator to send those leads to.\n\nWould you be open to a quick call this week to see if it's a fit?\n\nBest,\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
+        subject: "junk removal leads in {{city}}",
+        template: `Hi {{firstName}},\n\nI run florencescservices.com — Google "junk removal Florence SC" and you'll find me on page one. People needing junk hauled off around {{city}} land there every week, and right now I have no local operator to send them to.\n\nThe model is simple: one operator per zone, period. Nothing gets blasted to five companies the way Angi does it. A lead from your area goes to you and nobody else.\n\nYour first month is free — no card, no contract. Work the leads, keep the jobs, then decide if it's worth paying for.\n\nWant {{company}} to be where your zone's leads go? Reply "yes" and it's yours.\n\nCharlie\nFlorence SC Services\ncharlie@florencescservices.com`
       },
       { day: 2, type: "email", label: "Follow-up Email",
-        subject: "Quick follow-up â junk removal leads in your area",
-        template: `Hi {{firstName}},\n\nJust circling back on my note from a couple days ago. We have customers actively searching for junk removal and hauling services in your area.\n\nOur model is simple â we send you qualified leads, you close the jobs. No upfront cost to get started.\n\nWorth a 5-minute conversation?\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "re: junk removal leads in {{city}}",
+        template: `Hi {{firstName}},\n\nQuick follow-up — your zone is still open on my end, which means junk removal and cleanout calls from around {{city}} are coming in with no local operator attached.\n\nThe free month starts whenever you say the word. No card, no contract, just leads while you decide if they're any good.\n\nWorth a look?\n\nCharlie`
       },
       { day: 5, type: "call", label: "Cold Call",
-        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about sending junk removal leads your way. Wanted to connect real quick â do you have a minute?\n\n[IF YES] Great â so we generate leads for junk removal and hauling services in the Pee Dee region. We partner with one local operator per area. I'd love to send you 2 free leads as a test run. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask â are you pretty full on jobs right now, or is it more of a timing thing? [Listen] Got it. I'll follow up in a couple months. Have a good one.`
+        template: `Hey, this is Charlie with Florence SC Services. I sent you a couple emails about junk removal leads — got a minute?\n\n[IF YES] Great — my site pulls in junk removal and hauling requests across the Pee Dee, and every zone gets exactly one operator. Yours is open. First month's free, no card, no contract — you just work the leads and see what they're worth. Sound fair?\n\n[IF NOT INTERESTED] Totally get it. Mind if I ask — full on jobs right now, or more of a timing thing? [Listen] Got it. Zones are first come, first serve, so if yours is still open down the road I'll circle back. Have a good one.`
       },
-      { day: 8, type: "email", label: "Value Prop Email",
-        subject: "How {{company}} can get more hauling jobs without ads",
-        template: `Hi {{firstName}},\n\nMost junk removal companies around here rely on word of mouth or expensive ads ($15-30 per click).\n\nWe do it differently â we rank organically for "junk removal" and similar searches, then send those leads directly to our partners.\n\nZero ad spend on your end. Just answer the phone and close the job.\n\nIf you want to test it out, I'll send you 2 free leads this week. No strings.\n\nCharlie`
+      { day: 8, type: "email", label: "Proof + First-Come Email",
+        subject: "what one lead turned into",
+        template: `Hi {{firstName}},\n\nReal number: back in March I sent a partner a single lead — he closed a $400 job off it within two hours. One lead, one job, nobody else calling that customer.\n\nI bring it up because your zone is still unclaimed, and I pitch every operator in the area eventually. Zones are first come, first serve — whoever claims one locks it, free month included.\n\nI'd rather it be {{company}}. Reply "claim it" and your zone comes off the market.\n\nCharlie`
       },
-      { day: 12, type: "email", label: "Final Email",
-        subject: "Last note from me â {{company}}",
-        template: `Hi {{firstName}},\n\nI've reached out a few times about sending junk removal leads your way. I don't want to be a pest, so this will be my last email for now.\n\nIf anything changes down the road, just reply and we'll pick up where we left off.\n\nWishing you a busy season.\n\nCharlie\ncharlie@florencescservices.com`
+      { day: 12, type: "email", label: "Last Call Email",
+        subject: "closing the loop",
+        template: `Hi {{firstName}},\n\nLast note from me — you run a real business and I'm not going to keep cluttering the inbox.\n\nThe offer stands while your zone stays open: exclusive junk removal leads, one operator per zone, first month free, no card, no contract. The day someone else claims it, it's gone.\n\nIf it's ever a fit, just reply. Either way — busy season to you.\n\nCharlie\nFlorence SC Services`
       },
     ]
   },
   {
     id: "hauling_re_engage",
     vertical: "hauling",
-    name: "Re-engage â Hauling (Dead Leads)",
+    name: "Re-engage — Hauling (Dead Leads)",
     description: "Wake up junk removal prospects who went cold. 3 touches over 2 weeks.",
     steps: [
       { day: 0, type: "email", label: "Check-in Email",
-        subject: "Still sending junk removal leads in your area â room for one more partner",
-        template: `Hi {{firstName}},\n\nWe connected a while back about sending junk removal leads to {{company}}. At the time it wasn't the right fit.\n\nSince then we've grown our lead volume and are looking to add one more local partner. Thought of you first.\n\nInterested in a quick test? 2 free leads, no commitment.\n\nCharlie\ncharlie@florencescservices.com`
+        subject: "your zone opened back up",
+        template: `Hi {{firstName}},\n\nWe talked a while back about sending junk removal leads to {{company}} — timing wasn't right. Since then the site's grown and your zone is open again.\n\nSame deal, still simple: exclusive leads, one operator per zone, first month free, no card, no contract. First come, first serve.\n\nWant it before someone else takes it?\n\nCharlie\ncharlie@florencescservices.com`
       },
       { day: 5, type: "call", label: "Quick Call",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about junk removal leads â just wanted to see if timing is better now. We've got more volume and room for one more partner. Quick 2-minute call worth it?`
+        template: `Hey {{firstName}}, Charlie from Florence SC Services. We chatted a while back about junk removal leads — your zone's open again and I'd rather hand it to you than a stranger. One operator per zone, first month free, no card. Two minutes to talk it through?`
       },
       { day: 12, type: "sms", label: "Final Text",
-        template: `Hey {{firstName}}, Charlie from Florence SC Services. Still have junk removal leads if you want to test it out â 2 free, no strings. Just reply YES and I'll send them your way.`
+        template: `Hey {{firstName}}, Charlie w/ Florence SC Services. Your zone's open again — exclusive junk removal leads, first month free, no strings. Reply YES and I'll switch them on.`
       },
     ]
   },
   {
     id: "hauling_pilot_followup",
     vertical: "hauling",
-    name: "Pilot Follow-up â Hauling",
-    description: "After sending free junk removal leads â convert to paid.",
+    name: "Free-Month Follow-up — Hauling",
+    description: "During/after the free trial month — convert to paid.",
     steps: [
-      { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those junk removal leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you exclusive junk removal and hauling leads per month for your area. Pricing starts at $297/month. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+      { day: 0, type: "call", label: "Trial Check-in Call",
+        template: `Hey {{firstName}}, Charlie here. Just checking in on the junk removal leads from your free month. How'd they go?\n\n[IF GOOD] Awesome. Keeping the zone is easy — same exclusive lead flow, pricing starts at $297/month. Want me to send the details?\n\n[IF NO RESPONSE TO LEADS] No worries — did you get a chance to call them back? The faster they hear from you, the more of them book. I can resend anything you missed.`
       },
-      { day: 3, type: "email", label: "Pilot Results + Offer",
-        subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot junk removal leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ $297/mo Starter or $397/mo Growth plan\nâ¢ You're the only hauling partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+      { day: 3, type: "email", label: "Trial Results + Offer",
+        subject: "your free month + next steps",
+        template: `Hi {{firstName}},\n\nHope the free-month leads worked out well for {{company}}.\n\nKeeping the zone is simple:\n\n• Exclusive leads — you stay the only hauling operator in your zone\n• $297/mo Starter or $397/mo Growth plan\n• Cancel anytime, the zone just goes back on the market\n\nWant to lock your zone in before I open it back up?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
-        template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another hauling operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`
+        template: `Hey {{firstName}}, following up on the details I sent over. Any questions? Fair warning — if the trial lapses the zone goes back on the market, and I've got other operators asking about it. You were here first, so you get first shot. What do you think?`
       },
     ]
   },
@@ -279,31 +298,33 @@ function fillTemplate(template, biz) {
     .replace(/\{\{phone\}\}/g, biz.formatted_phone_number || "");
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// OUTREACH â via Cloudflare Worker proxy
+// ══════════════════════════════════════════════════════════════
+// OUTREACH — via Cloudflare Worker proxy
 // vertical-aware prompts
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 async function generateOutreach(biz, type) {
   const isHauling = (biz.vertical || "dumpster") === "hauling";
   const service = isHauling ? "junk removal and hauling" : "dumpster rental";
   const niche   = isHauling ? "junk removal" : "dumpster rental";
   const prompts={
-    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. We offer 2 FREE exclusive leads as a pilot, no credit card. Tone: direct, confident, not salesy. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
-    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). We offer 2 free exclusive leads, pilot program, one partner per area. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
-    sms:`Write a brief friendly SMS to "${biz.name}" ${niche} in Florence SC about our free pilot leads for ${service}. Max 2 sentences. Sound human.`,
-    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local lead gen pilot for ${service}. Mention their strong local reputation. Professional but warm.`,
+    email:`Write a short punchy cold outreach email for a local lead gen business reaching "${biz.name}" in Florence SC. They do ${niche}. The offer: exclusive ${niche} leads, ONE operator per zone (never shared with competitors like Angi does), FIRST MONTH FREE, no card, no contract, and zones are first-come-first-serve (their zone is open now but won't stay open). Tone: sharp local operator, direct, confident, zero corporate filler. Max 120 words. Include subject line. Format: Subject: [subject]\n\n[body]`,
+    coldcall:`Write a 60-second cold call script for calling "${biz.name}" (${niche}, Florence SC). The offer: exclusive leads, one operator per zone, first month free (no card, no contract), zones are first-come-first-serve. Tone: casual, confident, local. Include one objection handler for "not interested". Under 150 words.`,
+    sms:`Write a brief friendly SMS to "${biz.name}" (${niche}, Florence SC): we send exclusive ${service} leads to one local operator per zone, first month free, their zone is open right now. Max 2 sentences. Sound human, not corporate.`,
+    letter:`Write 3-4 sentences for a physical letter to "${biz.name}" in Florence SC about our exclusive local ${service} leads — one operator per zone, first month free, first come first serve on zones. Mention their strong local reputation. Professional but warm.`,
   };
-  const res = await fetch("https://florence-outreach.cball8475.workers.dev", {
-    method:"POST", headers:{"Content-Type":"application/json"},
+  const headers = {"Content-Type":"application/json"};
+  if (ENV_CRM_TOKEN) headers["Authorization"] = `Bearer ${ENV_CRM_TOKEN}`;
+  const res = await fetch(ENV_OUTREACH_URL, {
+    method:"POST", headers,
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompts[type]}]}),
   });
   const data = await res.json();
-  return data.content?.[0]?.text || "Error generating content.";
+  return data.content?.[0]?.text || data.error || "Error generating content.";
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 // GOOGLE PLACES SEARCH
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 async function searchGooglePlaces(keyword, location, apiKey) {
   const res = await fetch(`https://places.googleapis.com/v1/places:searchText`, {
     method:"POST",
@@ -331,13 +352,13 @@ async function searchGooglePlaces(keyword, location, apiKey) {
   })).filter(Boolean);
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
 // LEADS DASHBOARD
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// ââ D1 CRM score helpers ââ
+// ══════════════════════════════════════════════════════════════
+// ── D1 CRM score helpers ──
 const crmScoreColor = s => s==="hot"?C.green:s==="warm"?C.amber:C.red;
-const crmScoreIcon  = s => s==="hot"?"ð¥":s==="warm"?"â¡":"âï¸";
-const crmScoreLabel = s => s==="hot"?"ð¥ Hot":s==="warm"?"â¡ Warm":"âï¸ Cold";
+const crmScoreIcon  = s => s==="hot"?"🔥":s==="warm"?"⚡":"❄️";
+const crmScoreLabel = s => s==="hot"?"🔥 Hot":s==="warm"?"⚡ Warm":"❄️ Cold";
 const statusColor   = s => ({new:C.blue,contacted:C.amber,qualified:C.green,delivered:C.purple,rejected:C.red,expired:C.muted})[s]||C.muted;
 const statusLabel   = s => ({new:"New",contacted:"Contacted",qualified:"Qualified",delivered:"Delivered",rejected:"Rejected",expired:"Expired"})[s]||s;
 
@@ -385,7 +406,7 @@ function LeadsDashboard({flash}) {
       setPilotLeads(pilotsRes.pilot_leads || []);
     } catch(e) {
       setErr(e.message);
-      flash("â ï¸ CRM API error","error");
+      flash("⚠️ CRM API error","error");
     }
     setLoading(false);
   }
@@ -395,8 +416,8 @@ function LeadsDashboard({flash}) {
       await crm(`/leads/${id}`, "PATCH", { status });
       setLeads(prev => prev.map(l => l.id===id ? {...l, status} : l));
       if(selected?.id===id) setSelected(prev => ({...prev, status}));
-      flash(`Lead â ${statusLabel(status)} â`);
-    } catch(e) { flash("â ï¸ "+e.message,"error"); }
+      flash(`Lead → ${statusLabel(status)} ✅`);
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
   async function assignLead(leadId, prospectId) {
@@ -404,16 +425,16 @@ function LeadsDashboard({flash}) {
       await crm(`/leads/${leadId}/assign`, "POST", { prospect_id: prospectId });
       await loadAll();
       setAssignLeadId(null);
-      flash("Lead reassigned â");
-    } catch(e) { flash("â ï¸ "+e.message,"error"); }
+      flash("Lead reassigned ✅");
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
   async function updatePilotOutcome(pilotId, outcome) {
     try {
       await crm(`/pilot-leads/${pilotId}`, "PATCH", { outcome });
       setPilotLeads(prev => prev.map(pl => pl.id===pilotId ? {...pl, outcome} : pl));
-      flash(`Pilot lead marked ${outcome} â`);
-    } catch(e) { flash("â ï¸ "+e.message,"error"); }
+      flash(`Pilot lead marked ${outcome} ✅`);
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
   async function deleteLead(id) {
@@ -423,7 +444,7 @@ function LeadsDashboard({flash}) {
       setLeads(prev => prev.filter(l => l.id!==id));
       if(selected?.id===id) setSelected(null);
       flash("Lead deleted");
-    } catch(e) { flash("â ï¸ "+e.message,"error"); }
+    } catch(e) { flash("⚠️ "+e.message,"error"); }
   }
 
   // Filtering
@@ -452,40 +473,40 @@ function LeadsDashboard({flash}) {
     return op ? (op.short_name || op.name || "Unknown") : "Unknown";
   };
 
-  // ââ Loading state ââ
+  // ── Loading state ──
   if(loading && leads.length===0) return (
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"0.75rem"}}>
-      <div style={{fontSize:36,animation:"pulse 1s infinite"}}>ð</div>
-      <div style={{fontSize:14,color:C.muted}}>Loading leads from CRMâ¦</div>
-      {err&&<div style={{color:"#fca5a5",fontSize:12}}>â ï¸ {err}</div>}
+      <div style={{fontSize:36,animation:"pulse 1s infinite"}}>📊</div>
+      <div style={{fontSize:14,color:C.muted}}>Loading leads from CRM…</div>
+      {err&&<div style={{color:"#fca5a5",fontSize:12}}>⚠️ {err}</div>}
     </div>
   );
 
-  // ââ Main render ââ
+  // ── Main render ──
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      {/* ââ STATS BAR ââ */}
+      {/* ── STATS BAR ── */}
       <div style={{display:"flex",gap:"0.5rem",padding:"0.65rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center"}}>
         {[
-          {label:"Total",value:leads.length,color:C.blue,icon:"ð"},
-          {label:"New",value:newCount,color:newCount>0?C.blue:C.muted,icon:"ð"},
-          {label:"Today",value:todayCount,color:todayCount>0?C.purple:C.muted,icon:"ð"},
-          {label:"Hot",value:hotCount,color:C.green,icon:"ð¥"},
-          {label:"Warm",value:warmCount,color:C.amber,icon:"â¡"},
-          {label:"Cold",value:coldCount,color:C.muted,icon:"âï¸"},
-          {label:"Operators",value:operators.length,color:C.purple,icon:"ð"},
+          {label:"Total",value:leads.length,color:C.blue,icon:"📋"},
+          {label:"New",value:newCount,color:newCount>0?C.blue:C.muted,icon:"🆕"},
+          {label:"Today",value:todayCount,color:todayCount>0?C.purple:C.muted,icon:"📅"},
+          {label:"Hot",value:hotCount,color:C.green,icon:"🔥"},
+          {label:"Warm",value:warmCount,color:C.amber,icon:"⚡"},
+          {label:"Cold",value:coldCount,color:C.muted,icon:"❄️"},
+          {label:"Operators",value:operators.length,color:C.purple,icon:"🚛"},
         ].map(s=>(
           <div key={s.label} style={{background:C.card,borderRadius:8,padding:"0.4rem 0.7rem",flex:1,textAlign:"center",border:`1px solid ${C.border}`,minWidth:0}}>
             <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
             <div style={{fontSize:8,color:C.muted,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.icon} {s.label}</div>
           </div>
         ))}
-        <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.35rem 0.6rem",fontSize:11,flexShrink:0}}>âº</button>
+        <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.35rem 0.6rem",fontSize:11,flexShrink:0}}>↺</button>
       </div>
 
-      {/* ââ SUB-TAB BAR ââ */}
+      {/* ── SUB-TAB BAR ── */}
       <div style={{display:"flex",gap:3,padding:"0.4rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[["leads","ð All Leads"],["pilots","ð§ª Pilot Tracker"],["stats","ð Stats"]].map(([key,label])=>(
+        {[["leads","📋 All Leads"],["pilots","🧪 Pilot Tracker"],["stats","📈 Stats"]].map(([key,label])=>(
           <button key={key} onClick={()=>setSubTab(key)}
             style={{...btnBase,padding:"0.25rem 0.7rem",fontSize:10,
               background:subTab===key?"rgba(56,189,248,0.12)":"transparent",
@@ -494,17 +515,17 @@ function LeadsDashboard({flash}) {
             {label}
           </button>
         ))}
-        {err&&<span style={{fontSize:10,color:C.red,marginLeft:"auto"}}>â ï¸ {err}</span>}
+        {err&&<span style={{fontSize:10,color:C.red,marginLeft:"auto"}}>⚠️ {err}</span>}
       </div>
 
-      {/* ââââââââ LEADS TAB ââââââââ */}
+      {/* ════════ LEADS TAB ════════ */}
       {subTab==="leads"&&(
         <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-          {/* ââ LEFT: Lead list ââ */}
+          {/* ── LEFT: Lead list ── */}
           <div style={{width:300,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
             {/* Search + filters */}
             <div style={{padding:"0.45rem",borderBottom:`1px solid ${C.border}`}}>
-              <input style={{...inp,padding:"0.3rem 0.6rem",fontSize:11}} placeholder="Search name, phone, emailâ¦" value={search} onChange={e=>setSearch(e.target.value)}/>
+              <input style={{...inp,padding:"0.3rem 0.6rem",fontSize:11}} placeholder="Search name, phone, email…" value={search} onChange={e=>setSearch(e.target.value)}/>
               <div style={{display:"flex",gap:2,marginTop:4}}>
                 {["all","hot","warm","cold"].map(f=>(
                   <button key={f} onClick={()=>setFScore(f)}
@@ -544,13 +565,13 @@ function LeadsDashboard({flash}) {
                           <span style={{fontSize:8,fontWeight:600,color:statusColor(lead.status),background:`${statusColor(lead.status)}15`,padding:"1px 5px",borderRadius:100}}>
                             {statusLabel(lead.status)}
                           </span>
-                          {lead.is_pilot_lead===1&&<span style={{fontSize:8,color:C.purple}}>ð§ª</span>}
+                          {lead.is_pilot_lead===1&&<span style={{fontSize:8,color:C.purple}}>🧪</span>}
                           <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",marginLeft:"auto"}}>#{lead.id}</span>
                         </div>
                         <div style={{fontSize:12,color:"#fff",fontWeight:600}}>{lead.name||"Anonymous"}</div>
-                        <div style={{fontSize:10,color:C.muted}}>{lead.project_type||lead.dumpster_size||"â"}</div>
+                        <div style={{fontSize:10,color:C.muted}}>{lead.project_type||lead.dumpster_size||"—"}</div>
                         <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
-                          <span style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>{lead.source} Â· {fmtDate(lead.created_at)}</span>
+                          <span style={{fontSize:9,color:"rgba(255,255,255,0.2)"}}>{lead.source} · {fmtDate(lead.created_at)}</span>
                           <span style={{fontSize:9,color:C.purple}}>{operatorName(lead.assigned_to).split(" ")[0]}</span>
                         </div>
                       </div>
@@ -560,7 +581,7 @@ function LeadsDashboard({flash}) {
             </div>
           </div>
 
-          {/* ââ RIGHT: Lead detail ââ */}
+          {/* ── RIGHT: Lead detail ── */}
           <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
             {selected ? (
               <div style={{display:"flex",flexDirection:"column",gap:"0.85rem"}}>
@@ -576,12 +597,12 @@ function LeadsDashboard({flash}) {
                         {statusLabel(selected.status)}
                       </span>
                       {selected.is_pilot_lead===1&&(
-                        <span style={{fontSize:11,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 10px",borderRadius:100}}>ð§ª Pilot #{selected.pilot_lead_number}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:C.purple,background:"rgba(167,139,250,0.15)",padding:"2px 10px",borderRadius:100}}>🧪 Pilot #{selected.pilot_lead_number}</span>
                       )}
                     </div>
                   </div>
                   <div style={{display:"flex",gap:"0.35rem"}}>
-                    <button onClick={()=>deleteLead(selected.id)} style={{...btnBase,background:"rgba(239,68,68,0.12)",color:C.red,padding:"0.25rem 0.6rem",fontSize:10}}>ð</button>
+                    <button onClick={()=>deleteLead(selected.id)} style={{...btnBase,background:"rgba(239,68,68,0.12)",color:C.red,padding:"0.25rem 0.6rem",fontSize:10}}>🗑</button>
                   </div>
                 </div>
 
@@ -592,14 +613,14 @@ function LeadsDashboard({flash}) {
                     <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
                       <span style={{fontSize:10,color:C.muted,width:65}}>Phone</span>
                       <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.phone}</span>
-                      <a href={`tel:+1${cleanPhone(selected.phone)}`} style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>ð Call</a>
+                      <a href={`tel:+1${cleanPhone(selected.phone)}`} style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
                     </div>
                   )}
                   {selected.email&&(
                     <div style={{display:"flex",alignItems:"center",padding:"0.3rem 0",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
                       <span style={{fontSize:10,color:C.muted,width:65}}>Email</span>
                       <span style={{fontSize:12,color:"#fff",flex:1}}>{selected.email}</span>
-                      <a href={`mailto:${selected.email}`} style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>âï¸ Email</a>
+                      <a href={`mailto:${selected.email}`} style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️ Email</a>
                     </div>
                   )}
                   {[
@@ -628,11 +649,11 @@ function LeadsDashboard({flash}) {
                   <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:7}}>ASSIGNED TO</div>
                   <div style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
                     <span style={{fontSize:13,color:selected.assigned_to?"#fff":C.red,fontWeight:700}}>
-                      {selected.assigned_to ? `ð ${operatorName(selected.assigned_to)}` : "â ï¸ Unassigned"}
+                      {selected.assigned_to ? `🚛 ${operatorName(selected.assigned_to)}` : "⚠️ Unassigned"}
                     </span>
                     <button onClick={()=>{setAssignLeadId(selected.id);setAssignTo(selected.assigned_to||"");}}
                       style={{...btnBase,background:"rgba(167,139,250,0.12)",color:C.purple,padding:"0.2rem 0.6rem",fontSize:10,marginLeft:"auto"}}>
-                      âï¸ Reassign
+                      ✏️ Reassign
                     </button>
                   </div>
                   {selected.assigned_at&&(
@@ -664,7 +685,7 @@ function LeadsDashboard({flash}) {
                       <span style={{fontSize:11,color:C.text}}>Duration: {selected.call_duration||0}s</span>
                       <a href={selected.call_recording_url} target="_blank" rel="noreferrer"
                         style={{...btnBase,background:"rgba(56,189,248,0.12)",color:C.blue,padding:"0.2rem 0.6rem",fontSize:10,textDecoration:"none",marginLeft:"auto"}}>
-                        â¶ Listen
+                        ▶ Listen
                       </a>
                     </div>
                   </div>
@@ -672,7 +693,7 @@ function LeadsDashboard({flash}) {
               </div>
             ) : (
               <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,flexDirection:"column",gap:"0.5rem"}}>
-                <div style={{fontSize:32}}>ð</div>
+                <div style={{fontSize:32}}>👈</div>
                 <div style={{fontSize:13}}>Select a lead to view details</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,0.2)"}}>{filtered.length} lead{filtered.length!==1?"s":""} showing</div>
               </div>
@@ -681,16 +702,16 @@ function LeadsDashboard({flash}) {
         </div>
       )}
 
-      {/* ââââââââ PILOT TRACKER TAB ââââââââ */}
+      {/* ════════ PILOT TRACKER TAB ════════ */}
       {subTab==="pilots"&&(
         <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
-            <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:0}}>ð§ª Pilot Lead Tracker</h3>
-            <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.3rem 0.6rem",fontSize:10}}>âº Refresh</button>
+            <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:0}}>🧪 Pilot Lead Tracker</h3>
+            <button onClick={loadAll} style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.3rem 0.6rem",fontSize:10}}>↺ Refresh</button>
           </div>
           {pilotLeads.length===0 ? (
             <div style={{textAlign:"center",padding:"3rem",color:C.muted}}>
-              <div style={{fontSize:36,marginBottom:"0.5rem"}}>ð§ª</div>
+              <div style={{fontSize:36,marginBottom:"0.5rem"}}>🧪</div>
               <div style={{fontSize:14}}>No pilot leads yet</div>
               <div style={{fontSize:11,marginTop:"0.3rem"}}>Assign pilot leads via the API to start tracking</div>
             </div>
@@ -706,25 +727,25 @@ function LeadsDashboard({flash}) {
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:100,
                       color:pl.outcome==="pending"?C.amber:pl.outcome==="won"?C.green:C.red,
                       background:pl.outcome==="pending"?"rgba(245,158,11,0.12)":pl.outcome==="won"?"rgba(34,197,94,0.12)":"rgba(239,68,68,0.12)"}}>
-                      {pl.outcome==="pending"?"â³ Pending":pl.outcome==="won"?"â Won":pl.outcome==="lost"?"â Lost":pl.outcome}
+                      {pl.outcome==="pending"?"⏳ Pending":pl.outcome==="won"?"✅ Won":pl.outcome==="lost"?"❌ Lost":pl.outcome}
                     </span>
                   </div>
                   <div style={{display:"flex",gap:"1rem",fontSize:11,color:C.muted}}>
                     <span>Lead: <span style={{color:C.text}}>{pl.lead_name||"#"+pl.lead_id}</span></span>
                     <span>Score: <span style={{color:crmScoreColor(pl.lead_score)}}>{crmScoreLabel(pl.lead_score)}</span></span>
-                    <span>Source: <span style={{color:C.text}}>{pl.lead_source||"â"}</span></span>
+                    <span>Source: <span style={{color:C.text}}>{pl.lead_source||"—"}</span></span>
                     <span>Sent: <span style={{color:C.text}}>{fmtDate(pl.date_sent)}</span></span>
                   </div>
-                  {pl.notes&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>ð {pl.notes}</div>}
+                  {pl.notes&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>📝 {pl.notes}</div>}
                   {pl.outcome==="pending"&&(
                     <div style={{display:"flex",gap:"0.5rem",marginTop:"0.6rem"}}>
                       <button onClick={()=>updatePilotOutcome(pl.id,"won")}
                         style={{flex:1,padding:"0.35rem",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"rgba(34,197,94,0.15)",color:C.green}}>
-                        â Won
+                        ✅ Won
                       </button>
                       <button onClick={()=>updatePilotOutcome(pl.id,"lost")}
                         style={{flex:1,padding:"0.35rem",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"rgba(239,68,68,0.12)",color:C.red}}>
-                        â Lost
+                        ❌ Lost
                       </button>
                     </div>
                   )}
@@ -735,21 +756,21 @@ function LeadsDashboard({flash}) {
         </div>
       )}
 
-      {/* ââââââââ STATS TAB ââââââââ */}
+      {/* ════════ STATS TAB ════════ */}
       {subTab==="stats"&&(
         <div style={{flex:1,overflowY:"auto",padding:"1.25rem"}}>
-          <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:"0 0 1rem"}}>ð CRM Stats</h3>
+          <h3 style={{color:"#fff",fontSize:15,fontWeight:800,margin:"0 0 1rem"}}>📈 CRM Stats</h3>
           {stats ? (
             <div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
               {/* Big numbers row */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"0.65rem"}}>
                 {[
-                  {label:"Total Prospects",value:stats.total_prospects,color:C.blue,icon:"ð¥"},
-                  {label:"With Email",value:stats.with_email,color:C.green,icon:"âï¸"},
-                  {label:"In Sequences",value:stats.enrolled,color:C.amber,icon:"ð"},
-                  {label:"Active Operators",value:stats.active_operators,color:C.purple,icon:"ð"},
-                  {label:"Total Leads",value:stats.total_leads,color:C.blue,icon:"ð"},
-                  {label:"Active Pilots",value:stats.active_pilots,color:C.purple,icon:"ð§ª"},
+                  {label:"Total Prospects",value:stats.total_prospects,color:C.blue,icon:"👥"},
+                  {label:"With Email",value:stats.with_email,color:C.green,icon:"✉️"},
+                  {label:"In Sequences",value:stats.enrolled,color:C.amber,icon:"🔄"},
+                  {label:"Active Operators",value:stats.active_operators,color:C.purple,icon:"🚛"},
+                  {label:"Total Leads",value:stats.total_leads,color:C.blue,icon:"📋"},
+                  {label:"Active Pilots",value:stats.active_pilots,color:C.purple,icon:"🧪"},
                 ].map(s=>(
                   <div key={s.label} style={{background:C.card,borderRadius:10,padding:"0.75rem",border:`1px solid ${C.border}`,textAlign:"center"}}>
                     <div style={{fontSize:11,marginBottom:"0.2rem"}}>{s.icon}</div>
@@ -795,12 +816,12 @@ function LeadsDashboard({flash}) {
               </div>
             </div>
           ) : (
-            <div style={{color:C.muted,fontSize:13}}>Loading statsâ¦</div>
+            <div style={{color:C.muted,fontSize:13}}>Loading stats…</div>
           )}
         </div>
       )}
 
-      {/* ââââââââ ASSIGNMENT MODAL ââââââââ */}
+      {/* ════════ ASSIGNMENT MODAL ════════ */}
       {assignLeadId&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}
           onClick={()=>setAssignLeadId(null)}>
@@ -817,8 +838,8 @@ function LeadsDashboard({flash}) {
                     style={{...btnBase,width:"100%",justifyContent:"space-between",padding:"0.5rem 0.75rem",fontSize:12,
                       background:assignTo===op.place_id?"rgba(167,139,250,0.15)":"rgba(255,255,255,0.04)",
                       color:"#fff",border:`1px solid ${assignTo===op.place_id?C.purple:"transparent"}`}}>
-                    <span>ð {op.name}</span>
-                    <span style={{fontSize:10,color:C.muted}}>{op.default_zone||"â"}</span>
+                    <span>🚛 {op.name}</span>
+                    <span style={{fontSize:10,color:C.muted}}>{op.default_zone||"—"}</span>
                   </button>
                 ))}
               </div>
@@ -834,11 +855,11 @@ function LeadsDashboard({flash}) {
   );
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// BUYER CRM â with OUTREACH AUTOMATION ENGINE + MULTI-VERTICAL
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
+// BUYER CRM — with OUTREACH AUTOMATION ENGINE + MULTI-VERTICAL
+// ══════════════════════════════════════════════════════════════
 function BuyerCRM({flash}) {
-  // ââ D1 CRM API config ââ
+  // ── D1 CRM API config ──
   const crmUrl   = ENV_CRM_URL;
   const crmToken = ENV_CRM_TOKEN;
   const crm = useCallback((path, method, body) => crmFetch(crmUrl, crmToken, path, method, body), [crmUrl, crmToken]);
@@ -863,11 +884,11 @@ function BuyerCRM({flash}) {
   const [newBiz,       setNewBiz]      = useState({name:"",formatted_phone_number:"",vicinity:"",website:"",rating:"",user_ratings_total:"",notes:"",vertical:"dumpster"});
   const [googleKey,    setGoogleKey]   = useState(ENV_GPLACES || lsGet("gplaces_key") || "");
 
-  // ââ VERTICAL STATE â persisted to localStorage ââ
+  // ── VERTICAL STATE — persisted to localStorage ──
   const [activeVertical, setActiveVertical] = useState(lsGet("fsc_vertical") || "all");
   useEffect(() => { lsSet("fsc_vertical", activeVertical); }, [activeVertical]);
 
-  // ââ VERTICAL-FILTERED PIPELINE ââ
+  // ── VERTICAL-FILTERED PIPELINE ──
   // "all" shows everything; otherwise filters by prospect.vertical
   const filteredPipeline = activeVertical === "all"
     ? pipeline
@@ -897,7 +918,7 @@ function BuyerCRM({flash}) {
       setPipeline(withActivities.filter(p => p.stage !== "discovery"));
     } catch(e) {
       console.warn("CRM load error:", e.message);
-      flash("â ï¸ CRM API error â check connection","error");
+      flash("⚠️ CRM API error — check connection","error");
     }
     setSyncing(false);
   }
@@ -957,18 +978,18 @@ function BuyerCRM({flash}) {
         await loadCRMData();
         setLoading(false);
         flash(newResults.length > 0
-          ? `"${keyword}" â ${results.length} found, ${newResults.length} new added â`
-          : `"${keyword}" â ${results.length} found, 0 new (all already in prospect list)`);
+          ? `"${keyword}" → ${results.length} found, ${newResults.length} new added ✅`
+          : `"${keyword}" → ${results.length} found, 0 new (all already in prospect list)`);
         return;
       } catch(e) {
         flash(`Places API error: ${e.message}`, "error");
         setLoading(false); return;
       }
     }
-    // No API key â just reload from D1
+    // No API key — just reload from D1
     await loadCRMData();
     setLoading(false);
-    flash("Prospects loaded â");
+    flash("Prospects loaded ✅");
   }
 
   async function addProspect(biz) {
@@ -986,7 +1007,7 @@ function BuyerCRM({flash}) {
         vertical: biz.vertical || "dumpster",   // NEW: include vertical in POST
       });
       await loadCRMData();
-      flash(biz.name+" added â");
+      flash(biz.name+" added ✅");
       // Auto-search for email in background
       if (!biz.email && biz.website) {
         findEmail({...biz, place_id: biz.place_id || biz.id});
@@ -994,34 +1015,25 @@ function BuyerCRM({flash}) {
     } catch(e) { flash(`Add failed: ${e.message}`,"error"); }
   }
 
-  // ââ EMAIL FINDER ââ
+  // ── EMAIL FINDER ──
   const [emailSearching, setEmailSearching] = useState({});
   async function findEmail(prospect) {
     const pid = prospect.place_id || prospect.id;
     setEmailSearching(prev => ({...prev, [pid]: true}));
     try {
-      const socialLinks = [];
-      if (prospect.website) {
-        socialLinks.push(`https://www.facebook.com/search/top/?q=${encodeURIComponent(prospect.name)}`);
-      }
-      const res = await fetch("https://florence-outreach.cball8475.workers.dev/email-search", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          name: prospect.name,
-          website: prospect.website || null,
-          social_links: socialLinks,
-        }),
+      // The engine checks D1 first, then scrapes the operator's website
+      // (homepage + contact page). It saves the hit onto the prospect itself.
+      const data = await engineFetch("/email-search", "POST", {
+        prospect_id: pid,
+        name: prospect.name,
+        website: prospect.website || null,
       });
-      const data = await res.json();
-      if (data.emails && data.emails.length > 0) {
-        const bestEmail = data.emails[0].email;
-        const sources = data.emails[0].sources.join(", ");
-        await crm(`/prospects/${encodeURIComponent(pid)}`, "PATCH", { email: bestEmail });
+      const bestEmail = data.email || (data.emails && data.emails[0] && data.emails[0].email) || null;
+      if (bestEmail) {
         await reloadProspect(pid);
-        flash(`Found email for ${prospect.short_name||prospect.name}: ${bestEmail} (from ${sources}) â`);
+        flash(`Found email for ${prospect.short_name||prospect.name}: ${bestEmail} (${data.source||"website"}) ✓`);
       } else {
-        flash(`No email found for ${prospect.short_name||prospect.name} â try adding manually`, "info");
+        flash(`No email found for ${prospect.short_name||prospect.name} — try adding manually`, "info");
       }
     } catch(e) {
       flash(`Email search failed: ${e.message}`, "error");
@@ -1049,7 +1061,7 @@ function BuyerCRM({flash}) {
         vertical: biz.vertical || "dumpster",   // NEW: carry vertical through to pipeline
       });
       await reloadProspect(biz.place_id);
-      flash(`${biz.name} added â`);
+      flash(`${biz.name} added ✅`);
     } catch(e) { flash(`Add to pipeline failed: ${e.message}`,"error"); }
   }
 
@@ -1094,12 +1106,12 @@ function BuyerCRM({flash}) {
     } catch(e) { flash(`Remove failed: ${e.message}`,"error"); }
   }
 
-  // ââ SEQUENCE ENGINE (D1-backed) ââââââââââââââââââââââââââ
+  // ── SEQUENCE ENGINE (D1-backed) ──────────────────────────
   async function enrollInSequence(prospectId, sequenceId) {
     try {
       await crm(`/prospects/${encodeURIComponent(prospectId)}/enroll`, "POST", { sequence: sequenceId });
       await reloadProspect(prospectId);
-      flash("Enrolled in sequence â");
+      flash("Enrolled in sequence ✅");
     } catch(e) { flash(`Enroll failed: ${e.message}`,"error"); }
   }
 
@@ -1110,13 +1122,13 @@ function BuyerCRM({flash}) {
     const currentStep = seq?.steps[p.sequenceStep];
     try {
       await crm(`/prospects/${encodeURIComponent(prospectId)}/advance`, "POST", {
-        note: `â Completed: ${currentStep?.label || "Step " + (p.sequenceStep + 1)}`,
+        note: `✅ Completed: ${currentStep?.label || "Step " + (p.sequenceStep + 1)}`,
       });
       if (seq && p.sequenceStep + 1 >= seq.steps.length) {
         await crm(`/prospects/${encodeURIComponent(prospectId)}/unenroll`, "POST");
       }
       await reloadProspect(prospectId);
-      flash("Step completed â");
+      flash("Step completed ✅");
     } catch(e) { flash(`Complete failed: ${e.message}`,"error"); }
   }
 
@@ -1128,10 +1140,10 @@ function BuyerCRM({flash}) {
     try {
       await crm(`/prospects/${encodeURIComponent(prospectId)}/activities`, "POST", {
         type: "skip",
-        note: `â­ Skipped: ${currentStep?.label || "Step " + (p.sequenceStep + 1)}`,
+        note: `⏭ Skipped: ${currentStep?.label || "Step " + (p.sequenceStep + 1)}`,
       });
       await crm(`/prospects/${encodeURIComponent(prospectId)}/advance`, "POST", {
-        note: `â­ Skipped: ${currentStep?.label || "Step"}`,
+        note: `⏭ Skipped: ${currentStep?.label || "Step"}`,
       });
       if (seq && p.sequenceStep + 1 >= seq.steps.length) {
         await crm(`/prospects/${encodeURIComponent(prospectId)}/unenroll`, "POST");
@@ -1157,7 +1169,7 @@ function BuyerCRM({flash}) {
     } catch(e) { flash(`Unenroll failed: ${e.message}`,"error"); }
   }
 
-  // ââ COMPUTE TODAY'S ACTIONS (uses filteredPipeline) âââââââââ
+  // ── COMPUTE TODAY'S ACTIONS (uses filteredPipeline) ─────────
   function getTodaysActions() {
     const actions = [];
     filteredPipeline.forEach(p => {
@@ -1181,7 +1193,7 @@ function BuyerCRM({flash}) {
     return actions;
   }
 
-  // Prospects not yet enrolled â filtered by vertical
+  // Prospects not yet enrolled — filtered by vertical
   function getUnenrolled() {
     return filteredPipeline.filter(p => !p.sequence && p.stage !== "dead" && p.stage !== "closed");
   }
@@ -1206,13 +1218,13 @@ function BuyerCRM({flash}) {
   const todayActions = getTodaysActions();
   const unenrolled = getUnenrolled();
 
-  const TYPE_ICONS = { email: "âï¸", call: "ð", coldcall: "ð", sms: "ð¬", letter: "ð", enrolled: "ð", skip: "â­", unenroll: "ð", action: "â¡" };
+  const TYPE_ICONS = { email: "✉️", call: "📞", coldcall: "📞", sms: "💬", letter: "📄", enrolled: "🚀", skip: "⏭", unenroll: "🛑", action: "⚡" };
 
-  // ââ OPERATOR BLOCK helpers âââââââââââââââââââââââââââââââââ
+  // ── OPERATOR BLOCK helpers ─────────────────────────────────
   // Operators are pipeline prospects in pilot_active or closed stage
   const operatorProspects = filteredPipeline.filter(p => p.stage === "pilot_active" || p.stage === "closed");
 
-  // ââ ZONE GRID helpers ââââââââââââââââââââââââââââââââââââââ
+  // ── ZONE GRID helpers ──────────────────────────────────────
   // For each zone 1-10, determine status for the active vertical
   function getZoneStatus(zoneNum) {
     const inZone = filteredPipeline.filter(p => String(p.default_zone) === String(zoneNum));
@@ -1229,10 +1241,10 @@ function BuyerCRM({flash}) {
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
 
-      {/* ââ CRM Sub-tabs + Vertical Switcher ââ */}
+      {/* ══ CRM Sub-tabs + Vertical Switcher ══ */}
       <div style={{display:"flex",gap:4,padding:"0.45rem 1rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
         {/* View sub-tabs */}
-        {[["today",`â¡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","ð Pipeline"],["prospects","ð Prospects"],["sequences","ð Sequences"]].map(([k,l])=>(
+        {[["today",`⚡ Today ${todayActions.length>0?"("+todayActions.length+")":""}`],["pipeline","🗂 Pipeline"],["prospects","🔍 Prospects"],["sequences","🔄 Sequences"],["automation","🤖 Automation"]].map(([k,l])=>(
           <button key={k} onClick={()=>setCrmView(k)}
             style={{...btnBase,padding:"0.25rem 0.7rem",fontSize:11,
               background:crmView===k?"rgba(56,189,248,0.15)":"transparent",
@@ -1243,9 +1255,9 @@ function BuyerCRM({flash}) {
           </button>
         ))}
 
-        {/* Vertical switcher â separating line then [All] [ð Dumpster] [ð³ Tree] */}
+        {/* Vertical switcher — separating line then [All] [🗑 Dumpster] [🌳 Tree] */}
         <div style={{width:1,height:18,background:C.border,margin:"0 4px",flexShrink:0}}/>
-        {[{id:"all",label:"All",icon:"ð",color:C.muted}, ...VERTICALS.map(v=>({...v,label:v.label.split(" ")[0]}))].map(v=>(
+        {[{id:"all",label:"All",icon:"🔘",color:C.muted}, ...VERTICALS.map(v=>({...v,label:v.label.split(" ")[0]}))].map(v=>(
           <button key={v.id} onClick={()=>setActiveVertical(v.id)}
             style={{...btnBase,padding:"0.22rem 0.6rem",fontSize:10,
               background:activeVertical===v.id?`${v.color||C.muted}18`:"transparent",
@@ -1255,7 +1267,7 @@ function BuyerCRM({flash}) {
           </button>
         ))}
 
-        {syncing && <span style={{fontSize:10,color:C.muted,marginLeft:4}}>â³ syncingâ¦</span>}
+        {syncing && <span style={{fontSize:10,color:C.muted,marginLeft:4}}>⟳ syncing…</span>}
 
         {/* Pipeline stats */}
         <div style={{marginLeft:"auto",display:"flex",gap:"1.25rem"}}>
@@ -1268,16 +1280,18 @@ function BuyerCRM({flash}) {
         </div>
       </div>
 
-      {/* ââââââââââ TODAY'S ACTIONS ââââââââââ */}
+      {/* ══════════ TODAY'S ACTIONS ══════════ */}
+      {crmView==="automation"&&(<OutreachAutomation flash={flash}/>)}
+
       {crmView==="today"&&(
         <div style={{flex:1,overflow:"auto",padding:"0.85rem"}}>
           {todayActions.length === 0 && unenrolled.length === 0 ? (
             <div style={{textAlign:"center",padding:"3rem",color:C.muted}}>
-              <div style={{fontSize:48,marginBottom:"0.6rem"}}>â</div>
+              <div style={{fontSize:48,marginBottom:"0.6rem"}}>✅</div>
               <div style={{fontSize:16,color:"#fff",fontWeight:700,marginBottom:"0.4rem"}}>All caught up!</div>
               <div style={{fontSize:12}}>No actions due today. Enroll prospects in sequences to start the automation.</div>
               <button onClick={()=>setCrmView("sequences")} style={{...btnBase,background:C.purple,color:"#fff",padding:"0.5rem 1.25rem",fontSize:13,marginTop:"1rem"}}>
-                ð Set Up Sequences â
+                🔄 Set Up Sequences →
               </button>
             </div>
           ) : (
@@ -1285,7 +1299,7 @@ function BuyerCRM({flash}) {
               {todayActions.length > 0 && (
                 <>
                   <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:"0.65rem",display:"flex",alignItems:"center",gap:"0.5rem"}}>
-                    <span style={{fontSize:18}}>â¡</span> Today's Actions â {todayActions.length} due
+                    <span style={{fontSize:18}}>⚡</span> Today's Actions — {todayActions.length} due
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"0.5rem",marginBottom:"1.5rem"}}>
                     {todayActions.map((action, i) => {
@@ -1297,7 +1311,7 @@ function BuyerCRM({flash}) {
                           borderLeft:`4px solid ${overdue?C.red:step.type==="call"||step.type==="coldcall"?C.green:step.type==="email"?C.blue:C.amber}`,
                           borderRadius:10, padding:"0.85rem", display:"flex", gap:"0.85rem", alignItems:"flex-start"
                         }}>
-                          <div style={{fontSize:28,flexShrink:0}}>{TYPE_ICONS[step.type] || "â¡"}</div>
+                          <div style={{fontSize:28,flexShrink:0}}>{TYPE_ICONS[step.type] || "⚡"}</div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:4}}>
                               <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{p.name}</span>
@@ -1306,7 +1320,7 @@ function BuyerCRM({flash}) {
                                 {pVert.icon} {pVert.label.split(" ")[0]}
                               </span>
                               {overdue && <span style={{fontSize:9,fontWeight:700,color:C.red,background:"rgba(239,68,68,0.15)",padding:"1px 6px",borderRadius:100}}>OVERDUE</span>}
-                              <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{seq.name} Â· Step {stepIndex+1}/{seq.steps.length}</span>
+                              <span style={{fontSize:9,color:C.muted,marginLeft:"auto"}}>{seq.name} · Step {stepIndex+1}/{seq.steps.length}</span>
                             </div>
                             <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>
                               {step.label}
@@ -1314,37 +1328,37 @@ function BuyerCRM({flash}) {
                             {/* Template preview */}
                             <div style={{background:"rgba(0,0,0,0.25)",borderRadius:6,padding:"0.55rem",marginBottom:8,maxHeight:120,overflowY:"auto"}}>
                               {step.subject && <div style={{fontSize:10,color:C.amber,marginBottom:3}}>Subject: {fillTemplate(step.subject, p)}</div>}
-                              <div style={{fontSize:10,color:C.text,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{fillTemplate(step.template, p).slice(0, 300)}{fillTemplate(step.template, p).length > 300 ? "â¦" : ""}</div>
+                              <div style={{fontSize:10,color:C.text,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{fillTemplate(step.template, p).slice(0, 300)}{fillTemplate(step.template, p).length > 300 ? "…" : ""}</div>
                             </div>
                             <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap"}}>
                               <button onClick={()=>completeStep(p.place_id)} style={{...btnBase,background:C.green,color:"#fff",fontSize:11,padding:"0.35rem 0.85rem"}}>
-                                â Mark Done
+                                ✅ Mark Done
                               </button>
                               {(step.type==="call"||step.type==="coldcall")&&p.formatted_phone_number&&(
                                 <a href={`tel:+1${cleanPhone(p.formatted_phone_number)}`}
                                   style={{...btnBase,background:"rgba(34,197,94,0.15)",color:C.green,border:`1px solid rgba(34,197,94,0.3)`,fontSize:11,padding:"0.35rem 0.85rem",textDecoration:"none"}}>
-                                  ð Call {p.formatted_phone_number}
+                                  📞 Call {p.formatted_phone_number}
                                 </a>
                               )}
                               {step.type==="email"&&(
                                 <button onClick={()=>{navigator.clipboard.writeText(fillTemplate(step.template,p));flash("Email copied!");}}
                                   style={{...btnBase,background:"rgba(56,189,248,0.1)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:11,padding:"0.35rem 0.85rem"}}>
-                                  ð Copy Email
+                                  📋 Copy Email
                                 </button>
                               )}
                               {step.type==="sms"&&(
                                 <button onClick={()=>{navigator.clipboard.writeText(fillTemplate(step.template,p));flash("SMS copied!");}}
                                   style={{...btnBase,background:"rgba(245,158,11,0.1)",color:C.amber,border:`1px solid rgba(245,158,11,0.2)`,fontSize:11,padding:"0.35rem 0.85rem"}}>
-                                  ð Copy SMS
+                                  📋 Copy SMS
                                 </button>
                               )}
                               <button onClick={()=>generate(p, step.type==="coldcall"?"coldcall":"email")}
                                 style={{...btnBase,background:"rgba(167,139,250,0.1)",color:C.purple,border:`1px solid rgba(167,139,250,0.2)`,fontSize:11,padding:"0.35rem 0.85rem"}}>
-                                ð¤ AI Rewrite
+                                🤖 AI Rewrite
                               </button>
                               <button onClick={()=>skipStep(p.place_id)}
                                 style={{...btnBase,background:"rgba(255,255,255,0.05)",color:C.muted,fontSize:10,padding:"0.35rem 0.65rem"}}>
-                                â­ Skip
+                                ⏭ Skip
                               </button>
                             </div>
                           </div>
@@ -1358,7 +1372,7 @@ function BuyerCRM({flash}) {
               {unenrolled.length > 0 && (
                 <>
                   <div style={{fontSize:12,fontWeight:700,color:C.amber,marginBottom:"0.5rem",display:"flex",alignItems:"center",gap:"0.4rem"}}>
-                    <span>â ï¸</span> {unenrolled.length} prospect{unenrolled.length>1?"s":""} not in a sequence
+                    <span>⚠️</span> {unenrolled.length} prospect{unenrolled.length>1?"s":""} not in a sequence
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:"0.5rem"}}>
                     {unenrolled.map(p => {
@@ -1367,12 +1381,12 @@ function BuyerCRM({flash}) {
                       return (
                         <div key={p.place_id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:"0.65rem"}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:3}}>{p.name}</div>
-                          <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{p.formatted_phone_number || "No phone"} Â· {p.vicinity}</div>
+                          <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{p.formatted_phone_number || "No phone"} · {p.vicinity}</div>
                           <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
                             {pSeqs.map(seq => (
                               <button key={seq.id} onClick={()=>enrollInSequence(p.place_id, seq.id)}
                                 style={{...btnBase,background:"rgba(167,139,250,0.1)",color:C.purple,border:`1px solid rgba(167,139,250,0.2)`,fontSize:9,padding:"0.2rem 0.5rem"}}>
-                                ð {seq.name.split("â")[0].trim()}
+                                🚀 {seq.name.split("—")[0].trim()}
                               </button>
                             ))}
                           </div>
@@ -1387,12 +1401,12 @@ function BuyerCRM({flash}) {
         </div>
       )}
 
-      {/* ââââââââââ SEQUENCES VIEW ââââââââââ */}
+      {/* ══════════ SEQUENCES VIEW ══════════ */}
       {crmView==="sequences"&&(
         <div style={{flex:1,overflow:"auto",padding:"0.85rem"}}>
-          <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:"0.75rem"}}>ð Outreach Sequences</div>
+          <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:"0.75rem"}}>🔄 Outreach Sequences</div>
 
-          {/* Sequence templates â filtered by active vertical */}
+          {/* Sequence templates — filtered by active vertical */}
           <div style={{display:"flex",flexDirection:"column",gap:"0.65rem",marginBottom:"1.5rem"}}>
             {verticalSequences.map(seq => {
               const enrolled = filteredPipeline.filter(p => p.sequence === seq.id);
@@ -1444,13 +1458,13 @@ function BuyerCRM({flash}) {
                             <span style={{fontSize:9,color:C.purple}}>Step {p.sequenceStep+1}/{seq.steps.length}</span>
                             <span style={{fontSize:9,color:C.muted}}>{step?.label}</span>
                             <button onClick={()=>unenrollSequence(p.place_id)}
-                              style={{...btnBase,background:"transparent",color:C.red,fontSize:9,padding:"0.15rem 0.3rem"}}>â</button>
+                              style={{...btnBase,background:"transparent",color:C.red,fontSize:9,padding:"0.15rem 0.3rem"}}>✕</button>
                           </div>
                         );
                       })}
                     </div>
                   )}
-                  {/* Quick enroll â only unenrolled prospects matching this sequence's vertical */}
+                  {/* Quick enroll — only unenrolled prospects matching this sequence's vertical */}
                   {unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).length > 0 && (
                     <div style={{marginTop:8,display:"flex",gap:3,flexWrap:"wrap"}}>
                       {unenrolled.filter(p => (p.vertical || "dumpster") === seq.vertical).slice(0,5).map(p => (
@@ -1469,8 +1483,8 @@ function BuyerCRM({flash}) {
             })}
           </div>
 
-          {/* Activity feed â from filteredPipeline */}
-          <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:"0.5rem"}}>ð Recent Activity</div>
+          {/* Activity feed — from filteredPipeline */}
+          <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:"0.5rem"}}>📋 Recent Activity</div>
           <div style={{display:"flex",flexDirection:"column",gap:3}}>
             {filteredPipeline
               .flatMap(p => (p.activities || []).map(a => ({...a, bizName: p.name, place_id: p.place_id})))
@@ -1478,7 +1492,7 @@ function BuyerCRM({flash}) {
               .slice(0, 20)
               .map((a, i) => (
                 <div key={i} style={{display:"flex",alignItems:"center",gap:"0.5rem",padding:"0.35rem 0.5rem",background:i%2===0?C.card:"transparent",borderRadius:4}}>
-                  <span style={{fontSize:12}}>{TYPE_ICONS[a.type] || "ð"}</span>
+                  <span style={{fontSize:12}}>{TYPE_ICONS[a.type] || "📌"}</span>
                   <span style={{fontSize:10,color:"#fff",fontWeight:600,minWidth:120}}>{a.bizName}</span>
                   <span style={{fontSize:10,color:C.text,flex:1}}>{a.note}</span>
                   <span style={{fontSize:9,color:C.muted,whiteSpace:"nowrap"}}>{ago(a.date)}</span>
@@ -1492,11 +1506,11 @@ function BuyerCRM({flash}) {
         </div>
       )}
 
-      {/* ââââââââââ PIPELINE VIEW ââââââââââ */}
+      {/* ══════════ PIPELINE VIEW ══════════ */}
       {crmView==="pipeline"&&(
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
-          {/* ââ ZONE GRID (10 cells, single row) ââ */}
+          {/* ── ZONE GRID (10 cells, single row) ── */}
           <div style={{padding:"0.5rem 0.75rem",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
             <div style={{display:"flex",gap:"0.3rem",alignItems:"center"}}>
               <span style={{fontSize:9,color:C.muted,whiteSpace:"nowrap",marginRight:4}}>ZONES</span>
@@ -1504,7 +1518,7 @@ function BuyerCRM({flash}) {
                 const zStatus = getZoneStatus(zone);
                 const zColor = zStatus==="active"?C.green:zStatus==="pilot"?C.amber:C.muted;
                 const zBg    = zStatus==="active"?"rgba(34,197,94,0.12)":zStatus==="pilot"?"rgba(245,158,11,0.1)":"rgba(255,255,255,0.03)";
-                const zLabel = zStatus==="active"?"â":zStatus==="pilot"?"â":"â";
+                const zLabel = zStatus==="active"?"●":zStatus==="pilot"?"◐":"○";
                 return (
                   <div key={zone} style={{flex:1,textAlign:"center",padding:"0.25rem 0.1rem",background:zBg,border:`1px solid ${zColor}30`,borderRadius:5}}>
                     <div style={{fontSize:9,fontWeight:800,color:zColor}}>{zone}</div>
@@ -1515,17 +1529,17 @@ function BuyerCRM({flash}) {
               {/* Legend */}
               <div style={{display:"flex",gap:"0.65rem",marginLeft:8,flexShrink:0}}>
                 {[{c:C.green,l:"Active"},{c:C.amber,l:"Pilot"},{c:C.muted,l:"Open"}].map(({c,l})=>(
-                  <span key={l} style={{fontSize:8,color:c,whiteSpace:"nowrap"}}>â {l}</span>
+                  <span key={l} style={{fontSize:8,color:c,whiteSpace:"nowrap"}}>● {l}</span>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* ââ OPERATOR BLOCK ââ */}
+          {/* ── OPERATOR BLOCK ── */}
           <div style={{padding:"0.5rem 0.75rem",borderBottom:`1px solid ${C.border}`,flexShrink:0,overflowX:"auto"}}>
             {operatorProspects.length === 0 ? (
               <div style={{fontSize:10,color:C.muted,padding:"0.3rem 0"}}>
-                No operators yet â add prospects and move to pilot_active
+                No operators yet — add prospects and move to pilot_active
               </div>
             ) : (
               <div style={{display:"flex",gap:"0.5rem"}}>
@@ -1545,7 +1559,7 @@ function BuyerCRM({flash}) {
                         {/* CSA status */}
                         <span style={{fontSize:8,fontWeight:700,padding:"1px 6px",borderRadius:100,
                           color:csaSigned?C.green:C.amber,background:csaSigned?"rgba(34,197,94,0.12)":"rgba(245,158,11,0.1)"}}>
-                          {csaSigned?"â CSA Signed":"â³ Pilot"}
+                          {csaSigned?"✅ CSA Signed":"⏳ Pilot"}
                         </span>
                         {/* Zone */}
                         {op.default_zone&&(
@@ -1565,7 +1579,7 @@ function BuyerCRM({flash}) {
             )}
           </div>
 
-          {/* ââ PIPELINE KANBAN ââ */}
+          {/* ── PIPELINE KANBAN ── */}
           <div style={{flex:1,display:"flex",gap:"0.45rem",padding:"0.5rem",overflowX:"auto",overflowY:"auto",minHeight:0}}>
             {STAGES.map(stage=>{
               const cards=filteredPipeline.filter(p=>p.stage===stage);
@@ -1588,7 +1602,7 @@ function BuyerCRM({flash}) {
                             border:`1px solid ${isOpen?C.blue:C.border}`,
                             borderLeft:`3px solid ${STAGE_COLORS[stage]}`,
                             borderRadius:8}}>
-                          {/* Card header â always visible */}
+                          {/* Card header — always visible */}
                           <div onClick={()=>setSelected(isOpen?null:p)}
                             style={{padding:"0.65rem 0.75rem",cursor:"pointer"}}>
                             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1602,17 +1616,17 @@ function BuyerCRM({flash}) {
                                   </span>
                                 </div>
                               </div>
-                              <span style={{fontSize:12,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:6}}>{isOpen?"â¾":"â¸"}</span>
+                              <span style={{fontSize:12,color:isOpen?C.blue:C.muted,flexShrink:0,marginLeft:6}}>{isOpen?"▾":"▸"}</span>
                             </div>
-                            <div style={{fontSize:10,color:C.amber,marginTop:2}}>â {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
+                            <div style={{fontSize:10,color:C.amber,marginTop:2}}>★ {p.rating} <span style={{color:C.muted}}>({p.user_ratings_total})</span></div>
                             {p.sequence && (
                               <div style={{fontSize:9,color:C.purple,marginTop:3}}>
-                                ð {seq?.name?.split("â")[0]?.trim()} Â· Step {(p.sequenceStep||0)+1}
+                                🔄 {seq?.name?.split("—")[0]?.trim()} · Step {(p.sequenceStep||0)+1}
                               </div>
                             )}
                             {p.notes&&!isOpen&&<div style={{fontSize:10,color:C.muted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</div>}
                           </div>
-                          {/* Expanded detail â inline */}
+                          {/* Expanded detail — inline */}
                           {isOpen&&(
                             <div style={{padding:"0 0.65rem 0.65rem",display:"flex",flexDirection:"column",gap:"0.5rem",borderTop:`1px solid ${C.border}`}}>
                               {/* Contact */}
@@ -1622,21 +1636,21 @@ function BuyerCRM({flash}) {
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                                     <span style={{fontSize:11,color:C.text}}>{p.formatted_phone_number}</span>
                                     <a href={`tel:+1${cleanPhone(p.formatted_phone_number)}`}
-                                       style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>ð Call</a>
+                                       style={{...btnBase,background:C.green,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>📞 Call</a>
                                   </div>
                                 )}
                                 {p.email?(
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                                     <span style={{fontSize:11,color:C.text}}>{p.email}</span>
                                     <a href={`mailto:${p.email}`}
-                                       style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>âï¸</a>
+                                       style={{...btnBase,background:C.blue,color:"#fff",padding:"0.15rem 0.5rem",fontSize:10,textDecoration:"none"}}>✉️</a>
                                   </div>
                                 ):(
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                                     <span style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>No email</span>
                                     <button onClick={()=>findEmail(p)} disabled={emailSearching[p.place_id||p.id]}
                                       style={{...btnBase,background:"rgba(99,102,241,0.1)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,padding:"0.15rem 0.5rem",fontSize:9}}>
-                                      {emailSearching[p.place_id||p.id]?"â³ Searchingâ¦":"ð Find Email"}
+                                      {emailSearching[p.place_id||p.id]?"⏳ Searching…":"🔍 Find Email"}
                                     </button>
                                   </div>
                                 )}
@@ -1651,7 +1665,7 @@ function BuyerCRM({flash}) {
                                 </div>
                                 <div style={{fontSize:10,color:"#fff"}}>{p.score||qualifyScore(p)}/100</div>
                               </div>
-                              {/* Sequence â filtered to prospect's vertical */}
+                              {/* Sequence — filtered to prospect's vertical */}
                               <div>
                                 <div style={{fontSize:9,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>SEQUENCE</div>
                                 {p.sequence ? (
@@ -1661,11 +1675,11 @@ function BuyerCRM({flash}) {
                                     <div style={{fontSize:9,color:C.muted,marginTop:1}}>Step {(p.sequenceStep||0)+1} of {seq?.steps.length}</div>
                                     <div style={{display:"flex",gap:3,marginTop:5}}>
                                       <button onClick={()=>completeStep(p.place_id)}
-                                        style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>â Done</button>
+                                        style={{...btnBase,background:C.green,color:"#fff",fontSize:9,padding:"0.2rem 0.5rem"}}>✅ Done</button>
                                       <button onClick={()=>skipStep(p.place_id)}
-                                        style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>â­ Skip</button>
+                                        style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,fontSize:9,padding:"0.2rem 0.5rem"}}>⏭ Skip</button>
                                       <button onClick={()=>unenrollSequence(p.place_id)}
-                                        style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>â</button>
+                                        style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,fontSize:9,padding:"0.2rem 0.5rem"}}>✕</button>
                                     </div>
                                   </div>
                                 ) : (
@@ -1675,7 +1689,7 @@ function BuyerCRM({flash}) {
                                     {SEQUENCES.filter(sq => sq.vertical === (p.vertical || "dumpster")).map(sq => (
                                       <button key={sq.id} onClick={()=>enrollInSequence(p.place_id, sq.id)}
                                         style={{...btnBase,background:"rgba(167,139,250,0.08)",color:C.purple,border:`1px solid rgba(167,139,250,0.15)`,fontSize:9,justifyContent:"flex-start",padding:"0.2rem 0.4rem"}}>
-                                        ð {sq.name}
+                                        🚀 {sq.name}
                                       </button>
                                     ))}
                                   </div>
@@ -1703,7 +1717,7 @@ function BuyerCRM({flash}) {
                                   {["email","coldcall","sms","letter"].map(t=>(
                                     <button key={t} onClick={()=>generate(p,t)}
                                       style={{...btnBase,background:"rgba(56,189,248,0.08)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:9,justifyContent:"center",padding:"0.25rem"}}>
-                                      {t==="email"?"âï¸ Email":t==="coldcall"?"ð Script":t==="sms"?"ð¬ SMS":"ð Letter"}
+                                      {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
                                     </button>
                                   ))}
                                 </div>
@@ -1718,7 +1732,7 @@ function BuyerCRM({flash}) {
                                     setPipeline(prev=>prev.map(x=>x.place_id===p.place_id?{...x,notes:val}:x));
                                     updateNotes(p.place_id,val);
                                   }}
-                                  placeholder="Add notesâ¦"
+                                  placeholder="Add notes…"
                                   style={{width:"100%",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:10,padding:"0.3rem",fontFamily:"inherit",minHeight:40,resize:"vertical",boxSizing:"border-box"}}/>
                               </div>
                               {/* Activity log */}
@@ -1728,7 +1742,7 @@ function BuyerCRM({flash}) {
                                   <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:100,overflowY:"auto"}}>
                                     {[...(p.activities||[])].reverse().slice(0,5).map((a, i) => (
                                       <div key={i} style={{display:"flex",gap:"0.3rem",alignItems:"flex-start"}}>
-                                        <span style={{fontSize:9,flexShrink:0}}>{TYPE_ICONS[a.type] || "ð"}</span>
+                                        <span style={{fontSize:9,flexShrink:0}}>{TYPE_ICONS[a.type] || "📌"}</span>
                                         <span style={{fontSize:8,color:C.text,flex:1,lineHeight:1.3}}>{a.note}</span>
                                         <span style={{fontSize:7,color:C.muted,whiteSpace:"nowrap",flexShrink:0}}>{ago(a.date)}</span>
                                       </div>
@@ -1755,40 +1769,40 @@ function BuyerCRM({flash}) {
         </div>
       )}
 
-      {/* ââââââââââ PROSPECTS VIEW ââââââââââ */}
+      {/* ══════════ PROSPECTS VIEW ══════════ */}
       {crmView==="prospects"&&(
         <div style={{flex:1,overflow:"auto",padding:"0.85rem"}}>
           <div style={{display:"flex",gap:"0.5rem",marginBottom:"0.85rem",alignItems:"center",flexWrap:"wrap"}}>
             <button onClick={searchProspects} disabled={loading}
               style={{...btnBase,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",padding:"0.45rem 1rem",fontSize:12,opacity:loading?0.6:1}}>
-              {loading?"â³ Searchingâ¦":"ð Search Google Places"}
+              {loading?"⏳ Searching…":"🔍 Search Google Places"}
             </button>
             <button onClick={()=>setShowAddForm(f=>!f)}
               style={{...btnBase,background:C.green,color:"#fff",fontSize:11,padding:"0.45rem 0.85rem"}}>
-              â Add Prospect
+              ➕ Add Prospect
             </button>
             {!ENV_GPLACES && (
               <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"0.4rem"}}>
                 <div style={{fontSize:9,color:googleKey?C.green:C.muted,whiteSpace:"nowrap"}}>
-                  {googleKey?"ð¢ Places API":"âª No API Key"}
+                  {googleKey?"🟢 Places API":"⚪ No API Key"}
                 </div>
-                <input type="password" placeholder="Paste Google API keyâ¦" value={googleKey}
+                <input type="password" placeholder="Paste Google API key…" value={googleKey}
                   onChange={e=>{setGoogleKey(e.target.value);lsSet("gplaces_key",e.target.value);}}
                   style={{width:180,background:"rgba(0,0,0,0.3)",border:`1px solid ${googleKey?C.green:C.border}`,borderRadius:5,color:C.text,fontSize:10,padding:"0.3rem 0.5rem",fontFamily:"inherit"}}/>
               </div>
             )}
             {ENV_GPLACES && (
-              <div style={{marginLeft:"auto",fontSize:9,color:C.green}}>ð¢ Places API connected</div>
+              <div style={{marginLeft:"auto",fontSize:9,color:C.green}}>🟢 Places API connected</div>
             )}
             {searched&&(
               <>
-                <button onClick={addAllQualified} style={{...btnBase,background:C.green,color:"#fff",fontSize:11}}>â Add All Qualified</button>
+                <button onClick={addAllQualified} style={{...btnBase,background:C.green,color:"#fff",fontSize:11}}>✅ Add All Qualified</button>
                 <button onClick={async()=>{
                   const missing = pipeline.filter(p=>!p.email && p.website);
                   if(!missing.length){flash("All prospects with websites already have emails","info");return;}
-                  flash(`Searching emails for ${missing.length} prospectsâ¦`);
+                  flash(`Searching emails for ${missing.length} prospects…`);
                   for(const p of missing){await findEmail(p);}
-                }} style={{...btnBase,background:"rgba(99,102,241,0.15)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,fontSize:11}}>ð Find Missing Emails</button>
+                }} style={{...btnBase,background:"rgba(99,102,241,0.15)",color:C.blue,border:`1px solid rgba(99,102,241,0.2)`,fontSize:11}}>🔍 Find Missing Emails</button>
                 <div style={{display:"flex",gap:3}}>
                   {["all","qualified","unqualified"].map(f=>(
                     <button key={f} onClick={()=>setFilter(f)}
@@ -1803,10 +1817,10 @@ function BuyerCRM({flash}) {
             )}
           </div>
 
-          {/* ââ Add Prospect form â includes vertical selector ââ */}
+          {/* ── Add Prospect form — includes vertical selector ── */}
           {showAddForm&&(
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem",marginBottom:"0.75rem"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:"0.6rem"}}>â Add New Prospect</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#fff",marginBottom:"0.6rem"}}>➕ Add New Prospect</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.4rem",marginBottom:"0.4rem"}}>
                 {[["name","Company Name *"],["formatted_phone_number","Phone"],["vicinity","Address / City"],["website","Website"],["rating","Rating (0-5)"],["user_ratings_total","# Reviews"]].map(([k,label])=>(
                   <div key={k}>
@@ -1880,7 +1894,7 @@ function BuyerCRM({flash}) {
                       <div style={{fontSize:11,fontWeight:700,color:s>=70?C.green:s>=55?C.amber:C.red,marginLeft:8}}>{s}/100</div>
                     </div>
                     <div style={{display:"flex",gap:"0.5rem",marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
-                      <span style={{fontSize:10,color:C.amber}}>â {p.rating}</span>
+                      <span style={{fontSize:10,color:C.amber}}>★ {p.rating}</span>
                       <span style={{fontSize:10,color:C.muted}}>{p.user_ratings_total} reviews</span>
                       {p.formatted_phone_number&&<span style={{fontSize:10,color:C.text}}>{p.formatted_phone_number}</span>}
                       {/* Vertical badge */}
@@ -1888,14 +1902,14 @@ function BuyerCRM({flash}) {
                         {pVert.icon} {pVert.label.split(" ")[0]}
                       </span>
                     </div>
-                    {p.notes&&<div style={{fontSize:10,color:C.blue,marginBottom:6,fontStyle:"italic"}}>ð¡ {p.notes}</div>}
+                    {p.notes&&<div style={{fontSize:10,color:C.blue,marginBottom:6,fontStyle:"italic"}}>💡 {p.notes}</div>}
                     <div style={{display:"flex",gap:3}}>
                       {!already
                         ?<button onClick={()=>addToPipeline(p)} style={{...btnBase,background:qual?C.green:"rgba(255,255,255,0.06)",color:qual?"#fff":C.muted,fontSize:10,flex:1,justifyContent:"center"}}>+ Add to Pipeline</button>
-                        :<div style={{fontSize:10,color:C.muted,flex:1,textAlign:"center",padding:"0.35rem"}}>â In Pipeline</div>
+                        :<div style={{fontSize:10,color:C.muted,flex:1,textAlign:"center",padding:"0.35rem"}}>✓ In Pipeline</div>
                       }
-                      <button onClick={()=>generate(p,"email")} style={{...btnBase,background:"rgba(56,189,248,0.1)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:10}}>âï¸ Draft</button>
-                      <button onClick={()=>deleteProspect(p.place_id)} style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,border:`1px solid rgba(239,68,68,0.15)`,fontSize:10}}>ð</button>
+                      <button onClick={()=>generate(p,"email")} style={{...btnBase,background:"rgba(56,189,248,0.1)",color:C.blue,border:`1px solid rgba(56,189,248,0.2)`,fontSize:10}}>✉️ Draft</button>
+                      <button onClick={()=>deleteProspect(p.place_id)} style={{...btnBase,background:"rgba(239,68,68,0.08)",color:C.red,border:`1px solid rgba(239,68,68,0.15)`,fontSize:10}}>🗑</button>
                     </div>
                   </div>
                 );
@@ -1905,7 +1919,7 @@ function BuyerCRM({flash}) {
         </div>
       )}
 
-      {/* ââââââââââ OUTREACH / AI DRAFT MODAL ââââââââââ */}
+      {/* ══════════ OUTREACH / AI DRAFT MODAL ══════════ */}
       {showOutreachModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center"}}
           onClick={e=>{if(e.target===e.currentTarget)setShowOutreachModal(false);}}>
@@ -1918,31 +1932,31 @@ function BuyerCRM({flash}) {
                     style={{...btnBase,padding:"0.22rem 0.6rem",fontSize:10,
                       background:outreachType===t?"rgba(56,189,248,0.15)":"transparent",
                       color:outreachType===t?C.blue:C.muted,border:`1px solid ${outreachType===t?"rgba(56,189,248,0.3)":"transparent"}`}}>
-                    {t==="email"?"âï¸ Email":t==="coldcall"?"ð Script":t==="sms"?"ð¬ SMS":"ð Letter"}
+                    {t==="email"?"✉️ Email":t==="coldcall"?"📞 Script":t==="sms"?"💬 SMS":"📄 Letter"}
                   </button>
                 ))}
               </div>
               {outreachText&&<button onClick={()=>{navigator.clipboard.writeText(outreachText);flash("Copied!");}}
-                style={{...btnBase,background:C.green,color:"#fff",fontSize:10,marginLeft:"auto"}}>ð Copy</button>}
+                style={{...btnBase,background:C.green,color:"#fff",fontSize:10,marginLeft:"auto"}}>📋 Copy</button>}
               <button onClick={()=>setShowOutreachModal(false)}
-                style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.25rem 0.5rem",fontSize:12,...(outreachText?{}:{marginLeft:"auto"})}}>â</button>
+                style={{...btnBase,background:"rgba(255,255,255,0.06)",color:C.muted,padding:"0.25rem 0.5rem",fontSize:12,...(outreachText?{}:{marginLeft:"auto"})}}>✕</button>
             </div>
             <div style={{flex:1,padding:"0.85rem",overflow:"auto"}}>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.85rem",minHeight:180,position:"relative"}}>
                 {generating
                   ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.5rem",minHeight:160}}>
-                      <div style={{fontSize:26,animation:"pulse 0.8s infinite"}}>âï¸</div>
-                      <div style={{fontSize:12,color:C.blue}}>Generatingâ¦</div>
+                      <div style={{fontSize:26,animation:"pulse 0.8s infinite"}}>✍️</div>
+                      <div style={{fontSize:12,color:C.blue}}>Generating…</div>
                     </div>
                   :<textarea value={outreachText} onChange={e=>setOutreachText(e.target.value)}
                       style={{width:"100%",minHeight:160,background:"transparent",border:"none",color:C.text,fontSize:12,fontFamily:"'Courier New',monospace",lineHeight:1.8,outline:"none",resize:"vertical"}}
-                      placeholder="Select a company from Pipeline or Prospects and click an outreach typeâ¦"/>
+                      placeholder="Select a company from Pipeline or Prospects and click an outreach type…"/>
                 }
               </div>
               {outreachBiz?.formatted_phone_number&&outreachType==="coldcall"&&(
                 <a href={`tel:+1${cleanPhone(outreachBiz.formatted_phone_number)}`}
                    style={{...btnBase,background:C.green,color:"#fff",fontSize:13,padding:"0.55rem 1.25rem",justifyContent:"center",textDecoration:"none",textAlign:"center",marginTop:"0.65rem",display:"flex"}}>
-                  ð Call {outreachBiz.name} â {outreachBiz.formatted_phone_number}
+                  📞 Call {outreachBiz.name} — {outreachBiz.formatted_phone_number}
                 </a>
               )}
             </div>
@@ -1953,9 +1967,192 @@ function BuyerCRM({flash}) {
   );
 }
 
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// ROOT APP â CSS display toggle to prevent unmount/remount
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ══════════════════════════════════════════════════════════════
+// ROOT APP — CSS display toggle to prevent unmount/remount
+// ══════════════════════════════════════════════════════════════
+
+// ──────────────────────────────────────────────────────────────
+// OUTREACH AUTOMATION — control panel for the engine worker
+// (florence-auto-outreach-emails): kill switch, live audit log,
+// zone board, sequence previews. Reached via /engine/* in prod
+// (dashboard-proxy injects the bearer behind Cloudflare Access).
+// ──────────────────────────────────────────────────────────────
+function OutreachAutomation({ flash }) {
+  const [status, setStatus] = useState(null);
+  const [log, setLog] = useState([]);
+  const [eventFilter, setEventFilter] = useState("all");
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [s, l] = await Promise.all([
+        engineFetch("/status"),
+        engineFetch("/outreach-log?limit=150"),
+      ]);
+      setStatus(s); setLog(l.log || []);
+    } catch (e) {
+      flash(`Engine unreachable: ${e.message}`, "error");
+    } finally { setLoading(false); }
+  }, [flash]);
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleEngine() {
+    if (!status) return;
+    const goingLive = !!status.paused?.toggle;
+    const msg = goingLive
+      ? "Un-pause the outreach engine? Cold emails to enrolled prospects start sending on the next run (Mon–Fri 8am ET)."
+      : "Pause the engine? Discovery keeps running as a dry-run, but no emails go out.";
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      await engineFetch("/toggle", "POST", { paused: !goingLive, reason: goingLive ? "unpaused from dashboard" : "paused from dashboard", actor: "dashboard" });
+      flash(goingLive ? "Engine is LIVE — sends resume next run ▶" : "Engine paused ⏸");
+      await load();
+    } catch (e) { flash(`Toggle failed: ${e.message}`, "error"); }
+    finally { setBusy(false); }
+  }
+  async function dryRun() {
+    setBusy(true);
+    try {
+      const r = await engineFetch("/trigger?dry=1", "POST");
+      flash(`Dry run ${r.run_id} started — hit ↻ in a minute for results`);
+    } catch (e) { flash(`Trigger failed: ${e.message}`, "error"); }
+    finally { setBusy(false); }
+  }
+  async function loadPreview(v) {
+    try { setPreview(await engineFetch(`/preview?vertical=${v}`)); }
+    catch (e) { flash(`Preview failed: ${e.message}`, "error"); }
+  }
+
+  const paused = !!(status && (status.paused?.toggle || status.paused?.env));
+  const today = status?.today || {};
+  const zoneNames = status?.zone_names || {};
+  const occupied = {};
+  (status?.active_operators || []).forEach(o => { occupied[`${o.default_zone}/${o.vertical || "dumpster"}`] = o.name; });
+  const events = ["all","email_sent","email_failed","added","enrolled","added_not_enrolled","rejected","unsubscribed","error"];
+  const shownLog = eventFilter === "all" ? log : log.filter(r => r.event === eventFilter);
+  const evColor = ev =>
+    ["email_sent","enrolled","added","digest_sent","email_found"].includes(ev) ? C.green :
+    ["email_failed","error","digest_failed"].includes(ev) ? C.red :
+    ev === "rejected" || ev === "added_not_enrolled" ? C.amber : C.muted;
+  const fmtDetail = d => {
+    if (!d) return "";
+    try { const o = JSON.parse(d); return o.reason || o.error || o.subject || o.sequence || (o.paused !== undefined ? (o.paused ? "paused" : "un-paused") : "") || ""; }
+    catch { return String(d).slice(0, 80); }
+  };
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:"1rem",display:"flex",flexDirection:"column",gap:"1rem"}}>
+      {/* Control row */}
+      <div style={{display:"flex",gap:"0.75rem",flexWrap:"wrap",alignItems:"stretch"}}>
+        <div style={{background:C.card,border:`1px solid ${paused?"rgba(245,158,11,0.45)":"rgba(34,197,94,0.45)"}`,borderRadius:10,padding:"0.9rem 1.1rem",minWidth:230}}>
+          <div style={{fontSize:10,color:C.muted,marginBottom:4}}>AUTOMATED OUTREACH ENGINE</div>
+          <div style={{fontSize:18,fontWeight:800,color:paused?C.amber:C.green}}>{loading?"…":paused?"⏸ PAUSED":"● LIVE"}</div>
+          <div style={{fontSize:10,color:C.muted,margin:"4px 0 8px",maxWidth:260}}>
+            {status?.paused?.reason || (paused ? "Discovery runs dry; no cold emails go out." : "Discovers, enrolls and sends Mon–Fri 8am ET.")}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button disabled={busy||loading} onClick={toggleEngine}
+              style={{...btnBase,padding:"0.3rem 0.8rem",fontSize:11,
+                background:paused?"rgba(34,197,94,0.15)":"rgba(245,158,11,0.15)",
+                color:paused?C.green:C.amber,
+                border:`1px solid ${paused?"rgba(34,197,94,0.4)":"rgba(245,158,11,0.4)"}`}}>
+              {paused?"▶ Un-pause (go live)":"⏸ Pause engine"}
+            </button>
+            <button disabled={busy} onClick={dryRun}
+              style={{...btnBase,padding:"0.3rem 0.8rem",fontSize:11,background:"rgba(56,189,248,0.12)",color:C.blue,border:"1px solid rgba(56,189,248,0.3)"}}>
+              🧪 Dry run now
+            </button>
+            <button disabled={loading} onClick={load}
+              style={{...btnBase,padding:"0.3rem 0.6rem",fontSize:11,color:C.muted,background:"transparent",border:`1px solid ${C.border}`}}>↻</button>
+          </div>
+        </div>
+        {[
+          {l:"Discovered today",v:today.discovered||0},
+          {l:"Added today",v:today.added||0,c:C.green},
+          {l:"Enrolled today",v:today.enrolled||0,c:C.purple},
+          {l:"Sent today",v:today.email_sent||0,c:C.green},
+          {l:"Rejected today",v:today.rejected||0,c:C.amber},
+          {l:"Due now",v:status?.due_now??"—",c:C.blue},
+          {l:"Suppressed",v:status?.suppression_count||0},
+        ].map(s=>(
+          <div key={s.l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.9rem 1rem",textAlign:"center",minWidth:100}}>
+            <div style={{fontSize:20,fontWeight:800,color:s.c||"#fff"}}>{s.v}</div>
+            <div style={{fontSize:9,color:C.muted}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Zone board */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.9rem 1.1rem"}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>ZONES — one operator per zone, first come first serve</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {Object.entries(zoneNames).map(([z,n])=>{
+            const dOp=occupied[`${z}/dumpster`], hOp=occupied[`${z}/hauling`];
+            return (
+              <div key={z} style={{border:`1px solid ${C.border}`,borderRadius:8,padding:"0.5rem 0.7rem",minWidth:160}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.text}}>Zone {z} · {n}</div>
+                <div style={{fontSize:10,color:dOp?C.red:C.green}}>🗑 dumpster: {dOp||"OPEN"}</div>
+                <div style={{fontSize:10,color:hOp?C.red:C.green}}>🚛 hauling: {hOp||"OPEN"}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sequence preview */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.9rem 1.1rem"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.muted}}>SEQUENCE PREVIEW — exactly what the engine sends</div>
+          <button onClick={()=>loadPreview("dumpster")} style={{...btnBase,padding:"0.2rem 0.6rem",fontSize:10,background:"rgba(56,189,248,0.12)",color:C.blue,border:"1px solid rgba(56,189,248,0.3)"}}>🗑 dumpster</button>
+          <button onClick={()=>loadPreview("hauling")} style={{...btnBase,padding:"0.2rem 0.6rem",fontSize:10,background:"rgba(34,197,94,0.12)",color:C.green,border:"1px solid rgba(34,197,94,0.3)"}}>🚛 hauling</button>
+          {preview&&<span style={{fontSize:10,color:C.muted}}>{preview.sequence} → {preview.sample?.name}, zone {preview.sample?.default_zone}</span>}
+        </div>
+        {preview&&preview.previews?.map(p=>(
+          <div key={p.step} style={{border:`1px solid ${C.border}`,borderRadius:8,padding:"0.7rem",marginTop:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.blue}}>Day {p.day} — {p.label} · <span style={{color:C.text}}>{p.subject}</span></div>
+            <pre style={{fontSize:11,whiteSpace:"pre-wrap",color:C.text,margin:"6px 0 0",fontFamily:"inherit"}}>{p.body}</pre>
+          </div>
+        ))}
+        {!preview&&<div style={{fontSize:11,color:C.muted,marginTop:4}}>Pick a vertical to render all 5 touches with sample merge fields.</div>}
+      </div>
+
+      {/* Activity log */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"0.9rem 1.1rem"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.muted}}>ACTIVITY LOG</div>
+          {events.map(ev=>(
+            <button key={ev} onClick={()=>setEventFilter(ev)}
+              style={{...btnBase,padding:"0.15rem 0.5rem",fontSize:9,
+                background:eventFilter===ev?"rgba(56,189,248,0.15)":"transparent",
+                color:eventFilter===ev?C.blue:C.muted,
+                border:`1px solid ${eventFilter===ev?"rgba(56,189,248,0.3)":C.border}`}}>
+              {ev}
+            </button>
+          ))}
+          <span style={{fontSize:10,color:C.muted,marginLeft:"auto"}}>{shownLog.length} rows</span>
+        </div>
+        {shownLog.length===0&&<div style={{fontSize:11,color:C.muted}}>No activity yet — the engine logs every discovery, rejection (with reason), send and error here.</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+          {shownLog.map(r=>(
+            <div key={r.id} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:11,padding:"0.25rem 0.3rem",borderBottom:`1px solid ${C.border}`}}>
+              <span style={{color:C.muted,fontSize:9,minWidth:118,flexShrink:0}}>{r.ts}</span>
+              <span style={{color:evColor(r.event),fontWeight:700,minWidth:120,flexShrink:0}}>{r.event}</span>
+              <span style={{color:C.text,minWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||r.email||r.prospect_id||"—"}</span>
+              {r.zone&&<span style={{color:C.purple,fontSize:10,flexShrink:0}}>z{r.zone}</span>}
+              <span style={{color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmtDetail(r.detail)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function App() {
   const [toast,setToast]               = useState(null);
   const [mainTab,setMainTab]           = useState("snapshot");
@@ -1978,7 +2175,7 @@ export default function App() {
         </svg>
         <span style={{fontWeight:500,fontSize:10,color:"rgba(255,255,255,0.38)",letterSpacing:"0.08em",borderLeft:`1px solid ${C.border}`,paddingLeft:"0.6rem"}}>DASHBOARD</span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
-          {[["crm","ð Outreach Engine"],["leads","ð Leads"],["snapshot","ð Snapshot"]].map(([key,label])=>(
+          {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"],["snapshot","📊 Snapshot"]].map(([key,label])=>(
             <button key={key} onClick={()=>setMainTab(key)}
               style={{...btnBase,padding:"0.25rem 0.75rem",fontSize:11,
                 background:mainTab===key?"rgba(56,189,248,0.15)":"transparent",
@@ -1991,11 +2188,11 @@ export default function App() {
         <div style={{marginLeft:"auto",display:"flex",gap:"0.45rem"}}>
           <a href="https://florencescservices.com" target="_blank" rel="noreferrer"
             style={{...btnBase,background:"rgba(255,255,255,0.05)",color:C.muted,padding:"0.22rem 0.65rem",fontSize:11,textDecoration:"none"}}>
-            ð Live Site
+            🌐 Live Site
           </a>
         </div>
       </div>
-      {/* CSS display toggle â prevents unmount/remount state loss */}
+      {/* CSS display toggle — prevents unmount/remount state loss */}
       <div style={{display:mainTab==="leads"?"flex":"none",flex:1,overflow:"hidden"}}>
         <LeadsDashboard flash={flash}/>
       </div>

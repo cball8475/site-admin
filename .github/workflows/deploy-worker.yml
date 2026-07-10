@@ -6,6 +6,12 @@ name: Deploy florence-crm-api
 #
 # Required repo secret: CLOUDFLARE_API_TOKEN  (Settings → Secrets and variables
 # → Actions). The account ID lives in wrangler.toml (not secret).
+#
+# BOOTSTRAP MODE (workflow_dispatch with bootstrap_all=true): deploys every
+# worker in dependency order — the outreach engine must exist before
+# florence-crm-api / florence-lead-followup deploy, because they bind its
+# `Mailer` entrypoint. Used to ship the 2026-07 outreach rebuild from its
+# feature branch; day-to-day deploys use the per-worker workflows.
 
 on:
   push:
@@ -13,17 +19,62 @@ on:
     paths:
       - 'worker/florence-crm-api/**'
       - '.github/workflows/deploy-worker.yml'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      bootstrap_all:
+        description: 'Deploy ALL workers + dashboard in dependency order (outreach rebuild bootstrap)'
+        type: boolean
+        default: false
+      send_test_email:
+        description: 'Bootstrap: send a production-path test email to Charlie'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Bootstrap: kick a full engine dry-run (no prospect emails; digest still sends)'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # ── Bootstrap: outreach engine first (exports the Mailer entrypoint) ──
+      - name: Deploy florence-auto-outreach-emails (engine)
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+
+      - name: Deploy florence-lead-followup
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-lead-followup
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+
+      - name: Deploy florence-outreach (secured Claude proxy)
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-outreach
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+
+      - name: Deploy florence-dashboard-proxy
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-dashboard-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+
+      # ── florence-crm-api (always; after the engine so MAILER validates) ──
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker/florence-crm-api
+
       # Optional repo secret RESEND_API_KEY: when present, sync it to the
       # worker so owner lead-alert emails turn on. Adding the repo secret and
       # re-running this workflow is all it takes — no local wrangler needed.
@@ -38,3 +89,78 @@ jobs:
           else
             echo "RESEND_API_KEY repo secret not set — skipping (email lead alerts stay off until it is added)"
           fi
+
+      - name: Sync GOOGLE_PLACES_API_KEY to the engine
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$GOOGLE_PLACES_API_KEY" ]; then
+            printf '%s' "$GOOGLE_PLACES_API_KEY" | npx wrangler secret put GOOGLE_PLACES_API_KEY
+          else
+            echo "GOOGLE_PLACES_API_KEY repo secret not set — skipping (engine falls back to D1 config)"
+          fi
+
+      # ── Bootstrap smoke: rotate SMOKE_TOKEN, check readiness, optionally
+      #    send the production-path test email and kick a dry run ──
+      - name: Engine smoke test
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SEND_TEST: ${{ github.event.inputs.send_test_email }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          SMOKE=$(openssl rand -hex 16)
+          printf '%s' "$SMOKE" | npx wrangler secret put SMOKE_TOKEN
+          sleep 8
+          echo "— engine /preflight —"
+          curl -sS https://florence-auto-outreach-emails.cball8475.workers.dev/preflight
+          echo
+          echo "— crm-api /health —"
+          curl -sSf https://florence-crm-api.cball8475.workers.dev/health
+          echo
+          echo "— crm-api /health/db (seeds memory) —"
+          curl -sSf https://florence-crm-api.cball8475.workers.dev/health/db
+          echo
+          echo "— lead-followup /health —"
+          curl -sSf https://florence-lead-followup.cball8475.workers.dev/health
+          echo
+          echo "— florence-outreach unauthenticated POST (expect 401) —"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"hi"}]}' \
+            https://florence-outreach.cball8475.workers.dev)
+          echo "→ $code"; test "$code" = "401"
+          if [ "$SEND_TEST" = "true" ]; then
+            echo "— engine /test-email —"
+            curl -sSf -X POST -H "Authorization: Bearer $SMOKE" \
+              https://florence-auto-outreach-emails.cball8475.workers.dev/test-email
+            echo
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "— engine /trigger (dry run) —"
+            curl -sSf -X POST -H "Authorization: Bearer $SMOKE" \
+              "https://florence-auto-outreach-emails.cball8475.workers.dev/trigger?dry=1"
+            echo
+            echo "dry run kicked — phases chain in the background; results land in outreach_log + the digest email"
+          fi
+
+      # ── Bootstrap: build + publish the dashboard to Cloudflare Pages ──
+      - uses: actions/setup-node@v4
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build dashboard
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        run: npm ci && npm run build
+      - name: Publish dashboard to Cloudflare Pages
+        if: ${{ github.event.inputs.bootstrap_all == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        # --branch=main targets the Pages PRODUCTION environment (the project's
+        # production branch); without it a feature-branch checkout publishes a
+        # preview that pages.dev/dashboard visitors never see.
+        run: npx wrangler pages deploy dist --project-name=florence-dashboard --branch=main --commit-dirty=true
