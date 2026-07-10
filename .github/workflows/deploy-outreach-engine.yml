@@ -1,0 +1,78 @@
+name: Deploy florence-auto-outreach-emails
+
+# Deploys the outreach engine whenever its source changes on main, then runs a
+# no-send smoke test (rotating SMOKE_TOKEN + /preflight). Mirrors
+# deploy-worker.yml. Required repo secret: CLOUDFLARE_API_TOKEN.
+#
+# NOTE: other workers (florence-crm-api, florence-lead-followup) bind this
+# worker's `Mailer` entrypoint — this worker must exist/deploy before theirs
+# on a brand-new account (it already does in production).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/florence-auto-outreach-emails/**'
+      - '.github/workflows/deploy-outreach-engine.yml'
+  workflow_dispatch:
+    inputs:
+      send_test_email:
+        description: 'Also send a production-path test email to Charlie'
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/florence-auto-outreach-emails
+
+      # Optional repo secrets → worker secrets. Each step no-ops when the repo
+      # secret is absent (adding the secret + re-running this workflow is all
+      # it takes — no local wrangler needed).
+      - name: Sync RESEND_API_KEY worker secret
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$RESEND_API_KEY" ]; then
+            printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+          else
+            echo "RESEND_API_KEY repo secret not set — skipping (worker keeps its existing secret)"
+          fi
+      - name: Sync GOOGLE_PLACES_API_KEY worker secret
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$GOOGLE_PLACES_API_KEY" ]; then
+            printf '%s' "$GOOGLE_PLACES_API_KEY" | npx wrangler secret put GOOGLE_PLACES_API_KEY
+          else
+            echo "GOOGLE_PLACES_API_KEY repo secret not set — skipping (worker keeps its existing secret)"
+          fi
+
+      # Smoke test — rotates an ephemeral SMOKE_TOKEN, then checks the public
+      # /preflight readiness endpoint. Sends nothing unless dispatched with
+      # send_test_email=true.
+      - name: Smoke test
+        working-directory: worker/florence-auto-outreach-emails
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SEND_TEST: ${{ github.event.inputs.send_test_email }}
+        run: |
+          SMOKE=$(openssl rand -hex 16)
+          printf '%s' "$SMOKE" | npx wrangler secret put SMOKE_TOKEN
+          sleep 8
+          echo "— /preflight —"
+          curl -sSf https://florence-auto-outreach-emails.cball8475.workers.dev/preflight | tee preflight.json
+          if [ "$SEND_TEST" = "true" ]; then
+            echo "— /test-email —"
+            curl -sSf -X POST -H "Authorization: Bearer $SMOKE" \
+              https://florence-auto-outreach-emails.cball8475.workers.dev/test-email
+          fi

@@ -1,0 +1,31 @@
+name = "florence-lead-followup"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# D1 — same florence-crm database (reads unresponded leads, stamps follow-ups).
+[[d1_databases]]
+binding = "DB"
+database_name = "florence-crm"
+database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
+
+# All email goes through the outreach engine's Mailer entrypoint (it holds the
+# Resend key; Brevo is gone). Deploy florence-auto-outreach-emails first.
+[[services]]
+binding = "MAILER"
+service = "florence-auto-outreach-emails"
+entrypoint = "Mailer"
+
+# Cron — Mon–Fri 14:00 UTC (10:00 AM ET): nudge operators on unworked leads.
+# MUST stay declared here or `wrangler deploy` drops the schedule.
+[triggers]
+crons = ["0 14 * * 1-5"]
+
+# ---------------------------------------------------------------------------
+# Secrets (Cloudflare, preserved across deploys):
+#   MANUAL_TRIGGER_TOKEN — legacy ?token= for GET / manual trigger (optional;
+#     a Bearer CRM token also works — validated against the CRM API)
+# BREVO_API_KEY is obsolete and unused as of v3 — safe to delete in the CF
+# dashboard whenever.
+# ---------------------------------------------------------------------------

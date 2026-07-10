@@ -16,6 +16,15 @@ database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
 [triggers]
 crons = ["0 6 * * *"]
 
+# Mailer — owner lead-alert emails fall back to the outreach engine's Resend
+# sender when RESEND_API_KEY isn't set on this worker (the engine holds the
+# key). Deploy florence-auto-outreach-emails (which exports Mailer) BEFORE
+# deploying this worker, or the binding validation fails.
+[[services]]
+binding = "MAILER"
+service = "florence-auto-outreach-emails"
+entrypoint = "Mailer"
+
 # ---------------------------------------------------------------------------
 # Secrets are managed in Cloudflare (NOT in this file) and are preserved across
 # deploys. Required secrets:

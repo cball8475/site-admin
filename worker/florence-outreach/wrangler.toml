@@ -1,0 +1,15 @@
+name = "florence-outreach"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# ---------------------------------------------------------------------------
+# Secrets (Cloudflare, preserved across deploys):
+#   ANTHROPIC_API_KEY — Claude API key for dashboard copy generation
+#
+# v2 locked this worker down: every POST now requires a Bearer token that is
+# validated against the CRM API (GET /auth/check), and CORS is restricted to
+# the dashboard origins. It was previously an open, unauthenticated proxy —
+# anyone on the internet could spend the Anthropic key.
+# ---------------------------------------------------------------------------

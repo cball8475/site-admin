@@ -1,0 +1,22 @@
+name = "florence-dashboard-proxy"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+# workers.dev stays OFF: this worker injects the CRM bearer for anyone who
+# reaches it, and only the custom domain sits behind Cloudflare Access. A
+# workers.dev route would be an unauthenticated side door.
+workers_dev = false
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Serves dashboard.florencescservices.com (behind Cloudflare Access):
+#   /api/*      → api.florencescservices.com        (CRM hub, token injected)
+#   /engine/*   → florence-auto-outreach-emails     (outreach engine, token injected)
+#   /outreach/* → florence-outreach                 (Claude copy-gen, token injected)
+#   everything else → florence-dashboard.pages.dev  (the built React app)
+#
+# The custom domain / route is configured in the Cloudflare dashboard, not here.
+#
+# ---------------------------------------------------------------------------
+# Secrets (Cloudflare, preserved across deploys):
+#   CRM_API_TOKEN — bearer injected server-side so the browser app never
+#   holds a credential (Cloudflare Access gates who can reach this host).
+# ---------------------------------------------------------------------------
