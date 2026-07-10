@@ -34,4 +34,6 @@ jobs:
       - name: Publish to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler pages deploy dist --project-name=florence-dashboard --commit-dirty=true
+        # --branch=main = the Pages production environment; without it a
+        # non-main checkout would publish an invisible preview deployment.
+        run: npx wrangler pages deploy dist --project-name=florence-dashboard --branch=main --commit-dirty=true
