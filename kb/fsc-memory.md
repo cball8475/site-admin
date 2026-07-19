@@ -22,6 +22,54 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-19 — CallRail Voice Assist trial #2: intake-based spam gate (v2.26.0)
+
+New 14-day Voice Assist trial. Instead of restoring the trial-era duration
+bump (38→40s), the webhook history showed duration is the wrong signal, so the
+spam gate was rewritten to key on captured intake.
+
+### What the webhook history proved (D1 `lead_events` where `event_type='callrail_raw'`)
+Only 3 raw payloads on record (spam-filtered calls never insert a lead, so they
+aren't logged). They cleanly separate real from junk **by intake, not length**:
+- Lead **91** (David Ball, 120s) & **92** (Jim Newton, 109s): `answered=true`,
+  tag "Voice Assist - Message Taken", full `voice_assist_message.contents`
+  (name, purpose, product_service_interest, size, days). Real leads.
+- Lead **101** ("Pawleys Is Sc", 41s): `answered=false`, `call_type=voicemail`,
+  **no `voice_assist_message`**, no name/service/ZIP — yet it PASSED the old 38s
+  filter and fired a wasted owner alert. Raising to 40s would not have caught it.
+
+### Confirmed Voice Assist payload field names (no more guessing)
+- `body.voice_assist_message.contents` (and `.ordered_content_with_overrides`)
+  → `name`, `purpose`, `product_service_interest`, `contact_preference`,
+  `phone_number`, `custom_question_1` (size), `custom_question_2` (days).
+- `body.answered` (bool), `body.call_type` ("answered" | "voicemail"),
+  `body.tags` (includes "Voice Assist - Message Taken").
+- **ZIP is NOT a structured field** — it lives in `call_summary` text; the
+  worker's regex scan pulls it (29501, 29505 captured correctly).
+
+### The new gate (handleCallRailWebhook)
+`hasVoiceAssistIntake = product_service_interest || name || purpose || detected
+service`. Keep any call with intake regardless of duration; drop no-intake calls
+that are voicemail/unanswered or under `SPAM_MIN_DURATION` (38s). Verified against
+all 3 payloads: 101→drop, 91/92→keep. Post-trial (VA off) it reduces to the
+original 38s filter, so nothing breaks when the trial ends — no revert needed.
+
+### Repo/live drift caught + fixed (important)
+Production had drifted to **v2.25.0 while the repo was v2.24.0** — the live
+bundle carried uncommitted features (outreach logging: `/outreach-log`,
+`/outreach-toggle`, `/suppression`; plus `/auth/check`, `/zones/occupancy`,
+`ZONE_NAMES`). A naive deploy-from-repo would have **wiped those from prod**.
+Fixed by syncing `src/index.js` to the live bundle first (commit "sync repo
+source to live deployed bundle"), then applying the gate on top. **Lesson:
+`wrangler deploy` pushes `src/index.js` verbatim and the repo can lag live —
+pull the deployed bundle and diff before deploying.**
+
+### CallRail account side (Charlie confirmed via dashboard screenshot)
+Voice Assist already enabled on **6/6 tracking numbers**; Business profile / AI
+voice / Lead intake questions carried over from trial #1. "Text messages"
+(VA's own post-call SMS) left **Inactive** on purpose — the worker already texts
+customers via `sendCustomerSMS`, so enabling it would double-text.
+
 ## 2026-07-02 — Lead-alert system audit + Resend email backup (v2.23.0)
 
 ### How lead alerts work
@@ -50,9 +98,12 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
   tracking number).
 - CallRail webhook → worker confirmed configured and working (Charlie
   confirmed account side; worker side tested live).
-- **Calls under 38 seconds are dropped as spam** by the worker
-  (`SPAM_MIN_DURATION`) — no lead, no text. Restored after the Voice Assist
-  trial ended. Remember this before debugging "missing" call leads.
+- **Spam gate is intake-based as of v2.26.0** (was a plain `SPAM_MIN_DURATION`
+  duration cutoff). A CallRail call becomes a lead if Voice Assist captured
+  real intake (service/name/purpose) — *regardless of call length*. Calls with
+  no intake are dropped only when they're voicemail/unanswered or under 38s.
+  When Voice Assist is off, no intake is ever present, so it reduces to the old
+  38s duration filter. Remember this before debugging "missing" call leads.
 
 ### Twilio
 - Owner-alert SMS delivery confirmed working 2026-07-02 (test leads #97, #98,

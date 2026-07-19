@@ -383,7 +383,7 @@ var MEMORY_SEED = {
   title: "2026-07-02 \u2014 lead-alert audit + Resend email backup (v2.23.0)",
   content: [
     "Lead alerts: every new lead (website form /submit-lead, CallRail /webhook/callrail, manual POST /leads) runs notifyOwner(): (1) Twilio SMS to operator cell from +18437734140, (2) backup email via Resend leads@florencescservices.com -> cball8475@gmail.com stating whether the SMS succeeded, (3) both results logged to lead_events as 'owner_alert' (check GET /leads/:id/events when texts seem missing).",
-    "CallRail (verified live from swap.js config, company 322241453): (843) 938-0480 \u2014 the number on every site page \u2014 IS a CallRail tracking number; (843) 977-3419 is the second pool number; swap target 843-758-1987 (personal cell) appears nowhere on the site, so no call bypasses CallRail. Webhook to this worker confirmed working. Calls under 38s are dropped as spam (SPAM_MIN_DURATION) \u2014 no lead, no text.",
+    "CallRail (verified live from swap.js config, company 322241453): (843) 938-0480 \u2014 the number on every site page \u2014 IS a CallRail tracking number; (843) 977-3419 is the second pool number; swap target 843-758-1987 (personal cell) appears nowhere on the site, so no call bypasses CallRail. Webhook to this worker confirmed working. Spam gate (v2.26.0): a CallRail call becomes a lead if Voice Assist captured real intake (product_service_interest/name/purpose) regardless of duration; calls with no intake are dropped when they are voicemail/unanswered or under SPAM_MIN_DURATION (38s). Confirmed VA field names from live payloads: body.voice_assist_message.contents.{name,purpose,product_service_interest,custom_question_1,custom_question_2}; ZIP is in call_summary text, not a structured field.",
     "Twilio: owner SMS delivery confirmed working 2026-07-02 (test leads #97-#99). If owner_alert shows sent:true but no text arrives, check Twilio Console messaging logs for carrier drops (error 30034).",
     "Deploy: worker auto-deploys from site-admin main via .github/workflows/deploy-worker.yml. Email alerts stay OFF until the RESEND_API_KEY Actions repo secret is added to site-admin and the workflow re-run (it syncs the secret to the worker). Until then owner_alert shows email reason resend_key_missing.",
     "Remote Claude sessions cannot set GitHub Actions secrets (proxy blocks Actions-secrets endpoints) and no Cloudflare/Twilio/Resend/API_TOKEN credentials exist in any repo \u2014 secret changes are a Charlie task via GitHub settings.",
@@ -1186,18 +1186,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.25.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.26.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
         await ensureMemorySeed(db);
         const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
-        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.25.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -2358,9 +2358,23 @@ async function handleCallRailWebhook(request, db, env) {
     const cityStore = extracted.location || body.caller_city || body.city || null;
     const zone = detectZone(extracted.zip || extracted.city || body.caller_city || body.city || "");
     const score = scoreCall(duration);
-    if (duration < SPAM_MIN_DURATION) {
-      console.log(`Spam filtered: call_id=${callId} duration=${duration}s caller=${callerPhone}`);
-      return json({ success: true, filtered: true, reason: "spam_short_call", duration });
+    // Voice Assist intake is the authoritative "real lead" signal: a captured
+    // service/name means a person actually spoke to the AI assistant, no matter
+    // how short the call was. Robocall recordings that Voice Assist talks over
+    // come in with a padded duration but no coherent intake, so call length
+    // alone can't tell them apart (a 41s voicemail once passed the old filter
+    // and created a junk lead). Keep any call with real intake regardless of
+    // length; for calls with NO intake, fall back to the short-call filter and
+    // also drop voicemail/unanswered. When Voice Assist is off (no trial) no
+    // intake is ever present, so this reduces to the original duration filter.
+    const va = body.voice_assist_message || {};
+    const vaContents = va.ordered_content_with_overrides || va.contents || {};
+    const hasVoiceAssistIntake = !!(pickFirst(vaContents.product_service_interest, vaContents.name, vaContents.purpose) || extracted.service);
+    const isVoicemail = body.call_type === "voicemail" || body.answered === false;
+    if (!hasVoiceAssistIntake && (isVoicemail || duration < SPAM_MIN_DURATION)) {
+      const reason = isVoicemail ? "no_intake_voicemail" : "spam_short_call";
+      console.log(`Spam filtered: call_id=${callId} duration=${duration}s answered=${body.answered} intake=false reason=${reason}`);
+      return json({ success: true, filtered: true, reason, duration });
     }
     if (callId) {
       const existing = await db.prepare("SELECT id FROM leads WHERE callrail_call_id = ?").bind(String(callId)).first();
