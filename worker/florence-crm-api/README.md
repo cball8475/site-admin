@@ -39,18 +39,36 @@ are not dropped on deploy.
 3. **Zone fix** — `detectZone()` now runs on the Voice-Assist-captured ZIP
    instead of the unreliable `caller_city`.
 
-### Field-name discovery (do this while Voice Assist trial is active)
+### Spam gate is intake-based (v2.26.0)
 
-CallRail's exact Voice Assist payload field names couldn't be confirmed from
-docs. The handler now logs the **raw payload** to `lead_events` as
-`event_type = 'callrail_raw'`. After a real captured call, inspect it:
+`handleCallRailWebhook()` no longer filters on call duration alone. Voice
+Assist captures the caller's intake even on short calls, while robocalls it
+talks over come in with a padded duration but no real intake — so a call
+becomes a lead when Voice Assist captured a service/name/purpose, **regardless
+of length**. Calls with no intake are dropped only when they're
+voicemail/unanswered or under `SPAM_MIN_DURATION` (38s). With Voice Assist off
+(no trial) no intake is present, so it reduces to the original duration filter
+— nothing to revert when a trial ends.
+
+### Voice Assist payload field names (confirmed from live `callrail_raw`)
+
+Field names are now confirmed from real captured calls (no longer guessed):
+
+- `body.voice_assist_message.contents` / `.ordered_content_with_overrides` →
+  `name`, `purpose`, `product_service_interest`, `contact_preference`,
+  `phone_number`, `custom_question_1` (size), `custom_question_2` (days)
+- `body.answered` (bool), `body.call_type` (`answered` | `voicemail`),
+  `body.tags` (includes `"Voice Assist - Message Taken"`)
+- **ZIP is not a structured field** — it appears in `call_summary` text and is
+  pulled by the regex scan in `extractCallRailFields()`.
+
+The handler still logs each raw payload to `lead_events` as
+`event_type = 'callrail_raw'` for future inspection:
 
 ```sql
 SELECT event_data FROM lead_events
 WHERE event_type = 'callrail_raw' ORDER BY id DESC LIMIT 1;
 ```
-
-Then tighten the field list in `extractCallRailFields()` to the confirmed names.
 
 ## Owner lead alerts (v2.23.0)
 

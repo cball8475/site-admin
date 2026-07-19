@@ -1,9 +1,11 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// worker.js
+// src/index.js
 var __defProp2 = Object.defineProperty;
 var __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, "name", { value, configurable: true }), "__name");
+var __defProp22 = Object.defineProperty;
+var __name22 = /* @__PURE__ */ __name2((target, value) => __defProp22(target, "name", { value, configurable: true }), "__name");
 var CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -17,11 +19,13 @@ function json(data, status = 200) {
 }
 __name(json, "json");
 __name2(json, "json");
+__name22(json, "json");
 function err(msg, status = 400) {
   return json({ error: msg }, status);
 }
 __name(err, "err");
 __name2(err, "err");
+__name22(err, "err");
 function twiml(msg) {
   return new Response(
     `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${msg}</Message></Response>`,
@@ -30,6 +34,7 @@ function twiml(msg) {
 }
 __name(twiml, "twiml");
 __name2(twiml, "twiml");
+__name22(twiml, "twiml");
 var SPAM_MIN_DURATION = 38;
 var AUTHORIZED_SMS = ["+18437581987", "18437581987", "8437581987"];
 function scoreLead(timeline, projectType) {
@@ -46,6 +51,7 @@ function scoreLead(timeline, projectType) {
 }
 __name(scoreLead, "scoreLead");
 __name2(scoreLead, "scoreLead");
+__name22(scoreLead, "scoreLead");
 function scoreCall(durationSeconds) {
   if (durationSeconds >= 120) return "hot";
   if (durationSeconds >= 30) return "warm";
@@ -53,6 +59,7 @@ function scoreCall(durationSeconds) {
 }
 __name(scoreCall, "scoreCall");
 __name2(scoreCall, "scoreCall");
+__name22(scoreCall, "scoreCall");
 function matchPath(path, pattern) {
   const regex = new RegExp("^" + pattern.replace(/:([^/]+)/g, "([^/]+)") + "$");
   const m = path.match(regex);
@@ -60,6 +67,7 @@ function matchPath(path, pattern) {
 }
 __name(matchPath, "matchPath");
 __name2(matchPath, "matchPath");
+__name22(matchPath, "matchPath");
 async function logLeadEvent(db, leadId, eventType, eventData, actor) {
   try {
     await db.prepare(
@@ -71,6 +79,7 @@ async function logLeadEvent(db, leadId, eventType, eventData, actor) {
 }
 __name(logLeadEvent, "logLeadEvent");
 __name2(logLeadEvent, "logLeadEvent");
+__name22(logLeadEvent, "logLeadEvent");
 function detectZone(cityOrZip) {
   const v = (cityOrZip || "").toLowerCase().trim();
   const zipMap = {
@@ -158,6 +167,7 @@ function detectZone(cityOrZip) {
 }
 __name(detectZone, "detectZone");
 __name2(detectZone, "detectZone");
+__name22(detectZone, "detectZone");
 async function sendLeadSMS(env, { name, phone, city, zone, project_type, score, source }, leadId) {
   const sid = env.TWILIO_ACCOUNT_SID;
   const token = env.TWILIO_AUTH_TOKEN;
@@ -200,17 +210,12 @@ async function sendLeadSMS(env, { name, phone, city, zone, project_type, score, 
     return { sent: true, to };
   } catch (e) {
     console.error("Twilio SMS error:", e);
-    return { sent: false, reason: "exception", error: (e && e.message) || String(e) };
+    return { sent: false, reason: "exception", error: e && e.message || String(e) };
   }
 }
 __name(sendLeadSMS, "sendLeadSMS");
 __name2(sendLeadSMS, "sendLeadSMS");
-
-// --- Customer-facing SMS (Model A managed-fulfillment confirmation) ---------
-// Texts the CUSTOMER (not the operator) a transactional confirmation that a
-// local crew will call them. Sent on website_form + callrail leads, from the
-// approved A2P 10DLC number. Only sent when consent is on file; every message
-// carries STOP. Current single provider: William / Allwayz.
+__name22(sendLeadSMS, "sendLeadSMS");
 var OPERATOR_NAME = "William";
 var OPERATOR_COMPANY = "Allwayz Dumpster";
 var FSC_MAIN_LINE = "(843) 938-0480";
@@ -224,25 +229,22 @@ function normalizePhone(raw) {
   return null;
 }
 __name(normalizePhone, "normalizePhone");
+__name2(normalizePhone, "normalizePhone");
 function consentGiven(body) {
-  // Website lead forms carry a REQUIRED consent checkbox, so any submission
-  // implies consent; we only skip when an explicit opt-out value is present.
   const v = body && body.consent;
   if (v === false || v === 0) return false;
   if (typeof v === "string" && ["false", "0", "no", "off", ""].includes(v.toLowerCase())) return false;
   return true;
 }
 __name(consentGiven, "consentGiven");
+__name2(consentGiven, "consentGiven");
 async function sendCustomerSMS(env, { name, phone, service, city, source, consent }, leadId) {
   const sid = env.TWILIO_ACCOUNT_SID;
   const token = env.TWILIO_AUTH_TOKEN;
   if (!sid || !token) {
-    console.warn("Twilio secrets missing — customer SMS skipped");
+    console.warn("Twilio secrets missing \u2014 customer SMS skipped");
     return { sent: false, reason: "twilio_secrets_missing" };
   }
-  // Compliance: only text customers with consent. Form leads pass a required
-  // consent checkbox; inbound CallRail callers initiated contact, so a single
-  // transactional reply is permitted. Every message includes STOP.
   if (!consent) {
     console.log(`Customer SMS skipped (no consent) for lead #${leadId}`);
     return { sent: false, reason: "no_consent" };
@@ -252,15 +254,12 @@ async function sendCustomerSMS(env, { name, phone, service, city, source, consen
     console.log(`Customer SMS skipped (no valid phone) for lead #${leadId}`);
     return { sent: false, reason: "no_phone" };
   }
-  // Never text our own internal numbers (e.g. test leads / mis-keyed entries).
   if (to === FSC_SMS_FROM || to === "+18437581987") {
     return { sent: false, reason: "internal_number" };
   }
   const operatorPhone = env.OPERATOR_PHONE || FSC_MAIN_LINE;
   const firstName = (name || "").trim().split(/\s+/)[0] || "there";
   const serviceLabel = service && String(service).trim() ? String(service).trim() : "your dumpster rental";
-  // Forms pass a ZIP in the city slot; only name a city in the copy when it's an
-  // actual place name (not a bare ZIP), otherwise the line reads awkwardly.
   const cityStr = city ? String(city).trim() : "";
   const cityLabel = cityStr && !/^\d+$/.test(cityStr) ? ` in ${cityStr}` : "";
   const body = `Florence SC Services: Thanks, ${firstName}! Got your request for ${serviceLabel}${cityLabel}. ${OPERATOR_NAME} from our local crew (${OPERATOR_COMPANY}) will call you shortly from ${operatorPhone}. Questions? Reply here or call ${FSC_MAIN_LINE}. Reply STOP to opt out.`;
@@ -279,7 +278,7 @@ async function sendCustomerSMS(env, { name, phone, service, city, source, consen
     );
     if (!res.ok) {
       const e = await res.text();
-      console.error(`Customer SMS failed: ${res.status} — ${e}`);
+      console.error(`Customer SMS failed: ${res.status} \u2014 ${e}`);
       return { sent: false, reason: `twilio_${res.status}` };
     }
     console.log(`Customer SMS sent for lead #${leadId} to ${to} (source=${source})`);
@@ -290,24 +289,16 @@ async function sendCustomerSMS(env, { name, phone, service, city, source, consen
   }
 }
 __name(sendCustomerSMS, "sendCustomerSMS");
-
-// --- Owner lead alerts: email backup + unified notify -----------------------
-// SMS alone proved fragile (A2P/carrier filtering fails silently after Twilio
-// accepts the message), so every new lead also emails the owner via Resend
-// (same FSC account / verified domain the EATON weekly digest uses). Both
-// results are logged to lead_events as 'owner_alert' so delivery problems are
-// visible in the dashboard instead of only in worker console logs.
+__name2(sendCustomerSMS, "sendCustomerSMS");
 var LEAD_ALERT_TO = "cball8475@gmail.com";
 var LEAD_ALERT_FROM = "leads@florencescservices.com";
 async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, score, source }, leadId, smsResult) {
-  if (!env.RESEND_API_KEY) {
-    console.warn("RESEND_API_KEY not set — lead alert email skipped");
+  if (!env.RESEND_API_KEY && !env.MAILER) {
+    console.warn("RESEND_API_KEY not set and no MAILER binding \u2014 lead alert email skipped");
     return { sent: false, reason: "resend_key_missing" };
   }
   const zoneLabel = zone ? `Zone ${zone}` : "Unknown zone";
-  const smsNote = smsResult && smsResult.sent
-    ? "Owner SMS: sent (check your phone — if it never arrives, carrier/A2P filtering is dropping it)."
-    : `Owner SMS: FAILED (${(smsResult && smsResult.reason) || "unknown"}${smsResult && smsResult.error ? " — " + smsResult.error : ""})`;
+  const smsNote = smsResult && smsResult.sent ? "Owner SMS: sent (check your phone \u2014 if it never arrives, carrier/A2P filtering is dropping it)." : `Owner SMS: FAILED (${smsResult && smsResult.reason || "unknown"}${smsResult && smsResult.error ? " \u2014 " + smsResult.error : ""})`;
   const body = [
     `New FSC lead #${leadId}`,
     ``,
@@ -322,6 +313,23 @@ async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, 
     ``,
     `Reply by text from your cell: RESPONDED ${leadId} / BOOKED ${leadId} / LOST ${leadId}`
   ].join("\n");
+  const from = `FSC Leads <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`;
+  const to = env.LEAD_ALERT_TO || LEAD_ALERT_TO;
+  const subject = `FSC NEW LEAD #${leadId} \u2014 ${String(score).toUpperCase()} \u2014 ${city || "unknown city"} (${zoneLabel})`;
+  if (!env.RESEND_API_KEY && env.MAILER) {
+    try {
+      const r = await env.MAILER.send({ to, from, subject, text: body, kind: "owner_alert" });
+      if (r && r.ok) {
+        console.log(`Lead alert email sent via MAILER for lead #${leadId} (${r.id || "no-id"})`);
+        return { sent: true, id: r.id || null, via: "mailer" };
+      }
+      console.error(`Lead alert email via MAILER failed: ${JSON.stringify(r).slice(0, 300)}`);
+      return { sent: false, reason: r && r.reason || "mailer_failed", error: r && r.error || null, via: "mailer" };
+    } catch (e) {
+      console.error("Lead alert MAILER error:", e);
+      return { sent: false, reason: "mailer_exception", error: e && e.message || String(e), via: "mailer" };
+    }
+  }
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -330,26 +338,30 @@ async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, 
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        from: `FSC Leads <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`,
-        to: [env.LEAD_ALERT_TO || LEAD_ALERT_TO],
-        subject: `FSC NEW LEAD #${leadId} — ${String(score).toUpperCase()} — ${city || "unknown city"} (${zoneLabel})`,
+        from,
+        to: [to],
+        subject,
         text: body
       })
     });
     let detail = null;
-    try { detail = await res.json(); } catch {}
+    try {
+      detail = await res.json();
+    } catch {
+    }
     if (!res.ok) {
-      console.error(`Lead alert email failed: ${res.status} — ${JSON.stringify(detail).slice(0, 300)}`);
-      return { sent: false, reason: `resend_${res.status}`, error: (detail && (detail.message || detail.name)) || null };
+      console.error(`Lead alert email failed: ${res.status} \u2014 ${JSON.stringify(detail).slice(0, 300)}`);
+      return { sent: false, reason: `resend_${res.status}`, error: detail && (detail.message || detail.name) || null };
     }
     console.log(`Lead alert email sent for lead #${leadId} (${detail && detail.id})`);
-    return { sent: true, id: (detail && detail.id) || null };
+    return { sent: true, id: detail && detail.id || null };
   } catch (e) {
     console.error("Lead alert email error:", e);
-    return { sent: false, reason: "exception", error: (e && e.message) || String(e) };
+    return { sent: false, reason: "exception", error: e && e.message || String(e) };
   }
 }
 __name(sendLeadAlertEmail, "sendLeadAlertEmail");
+__name2(sendLeadAlertEmail, "sendLeadAlertEmail");
 async function notifyOwner(env, db, lead, leadId) {
   const sms = await sendLeadSMS(env, lead, leadId);
   const email = await sendLeadAlertEmail(env, lead, leadId, sms);
@@ -357,13 +369,7 @@ async function notifyOwner(env, db, lead, leadId) {
   return { sms, email };
 }
 __name(notifyOwner, "notifyOwner");
-
-// --- FSC memory (D1 layer) --------------------------------------------------
-// FSC memory is three layers: this D1 table (live, queryable), kb/*.md files
-// in the repo (stable playbook), and GitHub history. Sessions read/write via
-// GET/POST /memory with the API token. The seed below is inserted
-// idempotently (UNIQUE title) from /health/db, so entries can land even from
-// sessions that lack the API token but can trigger a deploy.
+__name2(notifyOwner, "notifyOwner");
 var MEMORY_TABLE_SQL = `CREATE TABLE IF NOT EXISTS memory (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   category TEXT NOT NULL DEFAULT 'general',
@@ -374,35 +380,101 @@ var MEMORY_TABLE_SQL = `CREATE TABLE IF NOT EXISTS memory (
 )`;
 var MEMORY_SEED = {
   category: "infrastructure",
-  title: "2026-07-02 — lead-alert audit + Resend email backup (v2.23.0)",
+  title: "2026-07-02 \u2014 lead-alert audit + Resend email backup (v2.23.0)",
   content: [
     "Lead alerts: every new lead (website form /submit-lead, CallRail /webhook/callrail, manual POST /leads) runs notifyOwner(): (1) Twilio SMS to operator cell from +18437734140, (2) backup email via Resend leads@florencescservices.com -> cball8475@gmail.com stating whether the SMS succeeded, (3) both results logged to lead_events as 'owner_alert' (check GET /leads/:id/events when texts seem missing).",
-    "CallRail (verified live from swap.js config, company 322241453): (843) 938-0480 — the number on every site page — IS a CallRail tracking number; (843) 977-3419 is the second pool number; swap target 843-758-1987 (personal cell) appears nowhere on the site, so no call bypasses CallRail. Webhook to this worker confirmed working. Calls under 38s are dropped as spam (SPAM_MIN_DURATION) — no lead, no text.",
+    "CallRail (verified live from swap.js config, company 322241453): (843) 938-0480 \u2014 the number on every site page \u2014 IS a CallRail tracking number; (843) 977-3419 is the second pool number; swap target 843-758-1987 (personal cell) appears nowhere on the site, so no call bypasses CallRail. Webhook to this worker confirmed working. Spam gate (v2.26.0): a CallRail call becomes a lead if Voice Assist captured real intake (product_service_interest/name/purpose) regardless of duration; calls with no intake are dropped when they are voicemail/unanswered or under SPAM_MIN_DURATION (38s). Confirmed VA field names from live payloads: body.voice_assist_message.contents.{name,purpose,product_service_interest,custom_question_1,custom_question_2}; ZIP is in call_summary text, not a structured field.",
     "Twilio: owner SMS delivery confirmed working 2026-07-02 (test leads #97-#99). If owner_alert shows sent:true but no text arrives, check Twilio Console messaging logs for carrier drops (error 30034).",
     "Deploy: worker auto-deploys from site-admin main via .github/workflows/deploy-worker.yml. Email alerts stay OFF until the RESEND_API_KEY Actions repo secret is added to site-admin and the workflow re-run (it syncs the secret to the worker). Until then owner_alert shows email reason resend_key_missing.",
-    "Remote Claude sessions cannot set GitHub Actions secrets (proxy blocks Actions-secrets endpoints) and no Cloudflare/Twilio/Resend/API_TOKEN credentials exist in any repo — secret changes are a Charlie task via GitHub settings.",
+    "Remote Claude sessions cannot set GitHub Actions secrets (proxy blocks Actions-secrets endpoints) and no Cloudflare/Twilio/Resend/API_TOKEN credentials exist in any repo \u2014 secret changes are a Charlie task via GitHub settings.",
     "FSC memory layers: this D1 memory table + site-admin kb/fsc-memory.md + GitHub history."
+  ].join("\n\n")
+};
+var MEMORY_SEED_2 = {
+  category: "infrastructure",
+  title: "2026-07-10 \u2014 outreach system rebuild (crm-api v2.25.0, engine v2)",
+  content: [
+    "Outreach rebuilt end-to-end. florence-auto-outreach-emails (engine v2) now runs the whole supply-side pipeline on its Mon-Fri 12:00 UTC cron: Google Places discovery (dumpster + hauling, 50km around Florence) -> auto-reject filters (lead-gen/directories, national chains, out-of-area, uncontactable, dupes by place_id + name+phone) -> email scrape (D1 first, then operator website homepage/contact pages) -> auto-add via POST /prospects -> auto-enroll respecting zone exclusivity per (zone, vertical) -> Resend sends of due sequence steps (marked sent ONLY on Resend 2xx) -> daily digest email to charlie@florencescservices.com. Every action is a row in D1 outreach_log (query via GET /outreach-log on this API or the engine).",
+    "Kill switch: data_store key 'outreach_toggle' (GET/POST /outreach-toggle here; also /toggle on the engine; dashboard has a switch). paused=true blocks all prospect sends but discovery/enroll/digest keep running as a dry-run. Default state on first touch is paused=true \u2014 cold email only starts after Charlie explicitly unpauses. Env var OUTREACH_PAUSED on the engine is a hard override.",
+    "Suppression: D1 table 'suppression' (endpoints /suppression GET/POST/DELETE + ?email= check). Unsubscribes (signed one-click links in every email) land here permanently and every send checks it first. CAN-SPAM footer (postal address + unsubscribe) on every outreach email.",
+    "Email plumbing: RESEND_API_KEY lives on florence-auto-outreach-emails; other workers send through its 'Mailer' WorkerEntrypoint service binding (MAILER) \u2014 florence-lead-followup v3 (Brevo removed, marks follow_up_N_sent only on confirmed send) and this worker's owner lead alerts fall back to MAILER when RESEND_API_KEY is absent here.",
+    "Auth: engine + florence-outreach (Claude proxy, now locked down) accept the CRM bearer token; florence-outreach validates callers against GET /auth/check on this API. Dashboard reaches them through florence-dashboard-proxy routes /engine/* and /outreach/* (token injected server-side, behind Cloudflare Access).",
+    "All five workers + dashboard live in site-admin (worker/* dirs, per-worker GitHub Actions deploys). See SYSTEM.md in the repo root for architecture, runbook, and the 5-touch sequence copy (offer: 1 month free, one operator per zone, first-come-first-serve on zones)."
   ].join("\n\n")
 };
 async function ensureMemorySeed(db) {
   await db.prepare(MEMORY_TABLE_SQL).run();
-  await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)")
-    .bind(MEMORY_SEED.category, MEMORY_SEED.title, MEMORY_SEED.content).run();
+  await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)").bind(MEMORY_SEED.category, MEMORY_SEED.title, MEMORY_SEED.content).run();
+  await db.prepare("INSERT OR IGNORE INTO memory (category, title, content) VALUES (?, ?, ?)").bind(MEMORY_SEED_2.category, MEMORY_SEED_2.title, MEMORY_SEED_2.content).run();
 }
 __name(ensureMemorySeed, "ensureMemorySeed");
-
-// --- CallRail Voice Assist field extraction --------------------------------
-// Voice Assist / geo-routing captures the caller's intent and ZIP, but the
-// payload shape varies. We probe the documented + likely fields and fall back
-// to text scanning; the raw payload is also logged so real field names can be
-// confirmed from live calls.
+__name2(ensureMemorySeed, "ensureMemorySeed");
+var ZONE_NAMES = {
+  "1": "Florence",
+  "2": "Grand Strand",
+  "3": "Georgetown / Williamsburg",
+  "4": "Darlington County",
+  "5": "Marion / Dillon",
+  "6": "Chesterfield / Marlboro",
+  "7": "Sumter / Lee / Clarendon"
+};
+var OUTREACH_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS outreach_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT DEFAULT (datetime('now')),
+    run_id TEXT,
+    source TEXT DEFAULT 'engine',
+    event TEXT NOT NULL,
+    prospect_id TEXT,
+    place_id TEXT,
+    name TEXT,
+    email TEXT,
+    zone TEXT,
+    detail TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_ts ON outreach_log(ts)`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_event ON outreach_log(event)`,
+  `CREATE INDEX IF NOT EXISTS idx_outreach_log_run ON outreach_log(run_id)`,
+  `CREATE TABLE IF NOT EXISTS suppression (
+    email TEXT PRIMARY KEY,
+    reason TEXT DEFAULT 'unsubscribed',
+    prospect_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS data_store (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now')))`
+];
+var outreachSchemaReady = false;
+async function ensureOutreachSchema(db) {
+  if (outreachSchemaReady) return;
+  for (const sql of OUTREACH_TABLES_SQL) await db.prepare(sql).run();
+  outreachSchemaReady = true;
+}
+__name(ensureOutreachSchema, "ensureOutreachSchema");
+__name2(ensureOutreachSchema, "ensureOutreachSchema");
+async function getOutreachToggle(db) {
+  await ensureOutreachSchema(db);
+  const row = await db.prepare("SELECT value, updated_at FROM data_store WHERE key = 'outreach_toggle'").first();
+  if (!row) {
+    const t = { paused: true, reason: "default safe state \u2014 never unpaused", updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: "system" };
+    await db.prepare("INSERT OR REPLACE INTO data_store (key, value, updated_at) VALUES ('outreach_toggle', ?, datetime('now'))").bind(JSON.stringify(t)).run();
+    return t;
+  }
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return { paused: true, reason: "unparseable toggle value \u2014 failing safe", updated_at: row.updated_at, updated_by: "system" };
+  }
+}
+__name(getOutreachToggle, "getOutreachToggle");
+__name2(getOutreachToggle, "getOutreachToggle");
 function pickFirst(...vals) {
   for (const v of vals) {
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    if (v !== void 0 && v !== null && String(v).trim() !== "") return v;
   }
   return null;
 }
 __name(pickFirst, "pickFirst");
+__name2(pickFirst, "pickFirst");
 var SERVICE_KEYWORDS = [
   ["junk removal", "junk removal"],
   ["junk", "junk removal"],
@@ -429,51 +501,47 @@ function detectServiceFromText(text) {
   return null;
 }
 __name(detectServiceFromText, "detectServiceFromText");
+__name2(detectServiceFromText, "detectServiceFromText");
 function extractCallRailFields(body) {
-  // Voice Assist captures the caller's intake in a structured object — this is
-  // the authoritative source. Prefer it; fall back to tags/summary text scans.
   const va = body.voice_assist_message || {};
   const vc = va.ordered_content_with_overrides || va.contents || {};
-  const summaryText = [vc.purpose, body.note, body.call_summary, body.summary, body.transcription, body.lead_explanation]
-    .filter(Boolean).join(" ");
-
-  // Service / project type — structured field first.
+  const summaryText = [vc.purpose, body.note, body.call_summary, body.summary, body.transcription, body.lead_explanation].filter(Boolean).join(" ");
   let service = pickFirst(vc.product_service_interest, body.project_type, body.service, body.service_type);
   if (!service && Array.isArray(body.tags) && body.tags.length) service = detectServiceFromText(body.tags.join(" "));
   if (!service && typeof body.tags === "string") service = detectServiceFromText(body.tags);
   if (!service) {
     service = detectServiceFromText(pickFirst(
-      vc.purpose, body.lead_status, body.keywords, body.note, body.call_summary,
-      body.summary, body.call_highlights, body.transcription, body.qualified_lead
+      vc.purpose,
+      body.lead_status,
+      body.keywords,
+      body.note,
+      body.call_summary,
+      body.summary,
+      body.call_highlights,
+      body.transcription,
+      body.qualified_lead
     ));
   }
   const custom = body.custom || body.custom_fields || body.fields || null;
   if (!service && custom && typeof custom === "object") {
-    service = pickFirst(custom.project_type, custom.service, custom.service_type, custom.what_service)
-      || detectServiceFromText(Object.values(custom).join(" "));
+    service = pickFirst(custom.project_type, custom.service, custom.service_type, custom.what_service) || detectServiceFromText(Object.values(custom).join(" "));
   }
-  // Location / ZIP — structured fields, then scan VA intake + call summary text.
-  // (The documented zip_code field is often empty for Voice Assist calls.)
   let zip = pickFirst(body.zip_code, body.zip, body.postal_code, body.customer_postal_code, vc.zip_code, vc.zip);
   if (Array.isArray(zip)) zip = zip.length ? zip[0] : null;
   if (!zip && custom && typeof custom === "object") {
     zip = pickFirst(custom.zip_code, custom.zip, custom.postal_code);
   }
   if (!zip && summaryText) {
-    const m = summaryText.match(/\b(2[5-9]\d{3})\b/); // SC / Pee Dee ZIPs are 29xxx-ish
+    const m = summaryText.match(/\b(2[5-9]\d{3})\b/);
     if (m) zip = m[1];
   }
   const city = pickFirst(body.customer_city, body.callercity, body.caller_city, body.city);
-  // Size + rental duration — derived from the intake/summary by pattern, not by
-  // positional custom-question order (which varies per call flow).
-  const sizeSrc = [vc.product_service_interest, vc.purpose, vc.custom_question_1, vc.custom_question_2, body.call_summary]
-    .filter(Boolean).join(" ");
+  const sizeSrc = [vc.product_service_interest, vc.purpose, vc.custom_question_1, vc.custom_question_2, body.call_summary].filter(Boolean).join(" ");
   const sizeMatch = sizeSrc.match(/(\d{1,2})\s*(?:-|\s)?\s*(?:yard|yd)\b/i);
   const dumpsterSize = sizeMatch ? `${sizeMatch[1]} yard` : null;
   const durSrc = [vc.purpose, vc.custom_question_1, vc.custom_question_2, body.call_summary].filter(Boolean).join(" ");
   const durMatch = durSrc.match(/(\d+)\s*(day|days|week|weeks|month|months)\b/i);
   const rentalDuration = durMatch ? `${durMatch[1]} ${durMatch[2].toLowerCase()}` : null;
-
   return {
     service: service ? String(service) : null,
     zip: zip ? String(zip).trim() : null,
@@ -481,11 +549,11 @@ function extractCallRailFields(body) {
     location: pickFirst(zip, city),
     dumpster_size: dumpsterSize,
     rental_duration: rentalDuration,
-    notes: vc.purpose ? String(vc.purpose) : (body.call_summary ? String(body.call_summary) : null)
+    notes: vc.purpose ? String(vc.purpose) : body.call_summary ? String(body.call_summary) : null
   };
 }
 __name(extractCallRailFields, "extractCallRailFields");
-
+__name2(extractCallRailFields, "extractCallRailFields");
 var GADS_CUSTOMER_ID = "6063111549";
 var GADS_LOGIN_CUSTOMER_ID = "2443469323";
 async function getGoogleAccessToken(env) {
@@ -508,6 +576,7 @@ async function getGoogleAccessToken(env) {
 }
 __name(getGoogleAccessToken, "getGoogleAccessToken");
 __name2(getGoogleAccessToken, "getGoogleAccessToken");
+__name22(getGoogleAccessToken, "getGoogleAccessToken");
 async function queryGads(accessToken, devToken, query) {
   const headers = {
     "Authorization": `Bearer ${accessToken}`,
@@ -534,6 +603,7 @@ async function queryGads(accessToken, devToken, query) {
 }
 __name(queryGads, "queryGads");
 __name2(queryGads, "queryGads");
+__name22(queryGads, "queryGads");
 async function resolveGeoNames(accessToken, devToken, criterionIds) {
   const names = {};
   if (!criterionIds.length) return names;
@@ -559,6 +629,7 @@ async function resolveGeoNames(accessToken, devToken, criterionIds) {
 }
 __name(resolveGeoNames, "resolveGeoNames");
 __name2(resolveGeoNames, "resolveGeoNames");
+__name22(resolveGeoNames, "resolveGeoNames");
 async function handleAdsMetrics(request, env) {
   if (!env.GOOGLE_ADS_DEVELOPER_TOKEN || !env.GOOGLE_ADS_REFRESH_TOKEN) {
     return err("Google Ads API credentials not configured \u2014 need GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_REFRESH_TOKEN", 502);
@@ -714,6 +785,7 @@ async function handleAdsMetrics(request, env) {
 }
 __name(handleAdsMetrics, "handleAdsMetrics");
 __name2(handleAdsMetrics, "handleAdsMetrics");
+__name22(handleAdsMetrics, "handleAdsMetrics");
 var GSC_SITE_URL = "https://florencescservices.com/";
 async function handleGscMetrics(request, env) {
   if (!env.GOOGLE_ADS_REFRESH_TOKEN || !env.GOOGLE_ADS_CLIENT_ID || !env.GOOGLE_ADS_CLIENT_SECRET) {
@@ -837,6 +909,7 @@ async function handleGscMetrics(request, env) {
 }
 __name(handleGscMetrics, "handleGscMetrics");
 __name2(handleGscMetrics, "handleGscMetrics");
+__name22(handleGscMetrics, "handleGscMetrics");
 async function handleAdsSearchTerms(request, env) {
   if (!env.GOOGLE_ADS_DEVELOPER_TOKEN || !env.GOOGLE_ADS_REFRESH_TOKEN) {
     return err("Google Ads API credentials not configured", 502);
@@ -957,6 +1030,7 @@ async function handleAdsSearchTerms(request, env) {
 }
 __name(handleAdsSearchTerms, "handleAdsSearchTerms");
 __name2(handleAdsSearchTerms, "handleAdsSearchTerms");
+__name22(handleAdsSearchTerms, "handleAdsSearchTerms");
 var SNAPSHOT_TABLES_SQL = [
   `CREATE TABLE IF NOT EXISTS seo_fix_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1097,6 +1171,7 @@ async function handleSeoSnapshot(env) {
 }
 __name(handleSeoSnapshot, "handleSeoSnapshot");
 __name2(handleSeoSnapshot, "handleSeoSnapshot");
+__name22(handleSeoSnapshot, "handleSeoSnapshot");
 var worker_default = {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -1111,18 +1186,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.24.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.26.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
         await ensureMemorySeed(db);
         const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
-        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.24.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -1139,11 +1214,17 @@ var worker_default = {
         const category = url.searchParams.get("category");
         const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 200);
         const conds = [], vals = [];
-        if (q) { conds.push("(title LIKE ? OR content LIKE ?)"); vals.push(`%${q}%`, `%${q}%`); }
-        if (category) { conds.push("category = ?"); vals.push(category); }
-        let sql = "SELECT * FROM memory" + (conds.length ? " WHERE " + conds.join(" AND ") : "") + " ORDER BY created_at DESC, id DESC LIMIT ?";
+        if (q) {
+          conds.push("(title LIKE ? OR content LIKE ?)");
+          vals.push(`%${q}%`, `%${q}%`);
+        }
+        if (category) {
+          conds.push("category = ?");
+          vals.push(category);
+        }
+        let sql3 = "SELECT * FROM memory" + (conds.length ? " WHERE " + conds.join(" AND ") : "") + " ORDER BY created_at DESC, id DESC LIMIT ?";
         vals.push(limit);
-        const { results } = await db.prepare(sql).bind(...vals).all();
+        const { results } = await db.prepare(sql3).bind(...vals).all();
         return json({ memory: results || [] });
       }
       if (path === "/memory" && method === "POST") {
@@ -1521,6 +1602,112 @@ var worker_default = {
            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)`
         ).bind(id, body.prospect_id, body.step, body.status, body.type || null, body.recipient || null, body.reason || null).run();
         return json({ success: true }, 201);
+      }
+      if (path === "/auth/check" && method === "GET") {
+        return json({ ok: true });
+      }
+      if (path === "/outreach-log" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const event = url.searchParams.get("event");
+        const runId = url.searchParams.get("run_id");
+        const day = url.searchParams.get("day");
+        const since = url.searchParams.get("since");
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "200", 10), 1e3);
+        const conds = [], vals = [];
+        if (event) {
+          conds.push("event = ?");
+          vals.push(event);
+        }
+        if (runId) {
+          conds.push("run_id = ?");
+          vals.push(runId);
+        }
+        if (day) {
+          conds.push("date(ts) = ?");
+          vals.push(day);
+        }
+        if (since) {
+          conds.push("ts >= ?");
+          vals.push(since);
+        }
+        let sql3 = "SELECT * FROM outreach_log" + (conds.length ? " WHERE " + conds.join(" AND ") : "") + " ORDER BY id DESC LIMIT ?";
+        vals.push(limit);
+        const { results } = await db.prepare(sql3).bind(...vals).all();
+        return json({ log: results || [], count: (results || []).length });
+      }
+      if (path === "/outreach-log" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        if (!body.event) return err("Required: event");
+        const detail = body.detail == null ? null : typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+        const ins = await db.prepare(
+          "INSERT INTO outreach_log (run_id, source, event, prospect_id, place_id, name, email, zone, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(body.run_id || null, body.source || "api", body.event, body.prospect_id || null, body.place_id || null, body.name || null, body.email || null, body.zone || null, detail).run();
+        return json({ success: true, id: ins.meta?.last_row_id || null }, 201);
+      }
+      if (path === "/outreach-log/summary" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const day = url.searchParams.get("day") || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const { results: byEvent } = await db.prepare("SELECT event, COUNT(*) as c FROM outreach_log WHERE date(ts) = ? GROUP BY event ORDER BY c DESC").bind(day).all();
+        const { results: reasons } = await db.prepare("SELECT COALESCE(json_extract(detail, '$.reason'), 'unspecified') as reason, COUNT(*) as c FROM outreach_log WHERE date(ts) = ? AND event = 'rejected' GROUP BY reason ORDER BY c DESC").bind(day).all();
+        const { results: runs } = await db.prepare("SELECT run_id, MIN(ts) as started, MAX(ts) as ended, COUNT(*) as row_count FROM outreach_log WHERE date(ts) = ? AND run_id IS NOT NULL GROUP BY run_id ORDER BY started").bind(day).all();
+        return json({ day, by_event: byEvent || [], rejection_reasons: reasons || [], runs: runs || [] });
+      }
+      if (path === "/suppression" && method === "GET") {
+        await ensureOutreachSchema(db);
+        const check = url.searchParams.get("email");
+        if (check) {
+          const email = check.trim().toLowerCase();
+          const row = await db.prepare("SELECT * FROM suppression WHERE email = ?").bind(email).first();
+          return json({ email, suppressed: !!row, entry: row || null });
+        }
+        const { results } = await db.prepare("SELECT * FROM suppression ORDER BY created_at DESC LIMIT 500").all();
+        return json({ suppression: results || [], count: (results || []).length });
+      }
+      if (path === "/suppression" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        if (!body.email) return err("Required: email");
+        const email = String(body.email).trim().toLowerCase();
+        await db.prepare(
+          "INSERT INTO suppression (email, reason, prospect_id) VALUES (?, ?, ?) ON CONFLICT(email) DO UPDATE SET reason = excluded.reason, prospect_id = COALESCE(excluded.prospect_id, suppression.prospect_id)"
+        ).bind(email, body.reason || "unsubscribed", body.prospect_id || null).run();
+        return json({ success: true, email }, 201);
+      }
+      if (path === "/suppression" && method === "DELETE") {
+        await ensureOutreachSchema(db);
+        const email = url.searchParams.get("email");
+        if (!email) return err("?email= required");
+        await db.prepare("DELETE FROM suppression WHERE email = ?").bind(email.trim().toLowerCase()).run();
+        return json({ success: true, removed: email.trim().toLowerCase() });
+      }
+      if (path === "/outreach-toggle" && method === "GET") {
+        return json(await getOutreachToggle(db));
+      }
+      if (path === "/outreach-toggle" && method === "POST") {
+        await ensureOutreachSchema(db);
+        const body = await request.json();
+        const paused = body.paused === true || body.paused === "true" || body.paused === 1;
+        const t = { paused, reason: body.reason || null, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: body.actor || "dashboard" };
+        await db.prepare("INSERT OR REPLACE INTO data_store (key, value, updated_at) VALUES ('outreach_toggle', ?, datetime('now'))").bind(JSON.stringify(t)).run();
+        await db.prepare("INSERT INTO outreach_log (source, event, detail) VALUES (?, 'toggle', ?)").bind(t.updated_by, JSON.stringify({ paused, reason: t.reason })).run();
+        return json({ success: true, ...t });
+      }
+      if (path === "/zones/occupancy" && method === "GET") {
+        const { results: ops } = await db.prepare("SELECT id, name, default_zone, operator_status, vertical FROM prospects WHERE operator_status IN ('active', 'pilot_active') AND default_zone IS NOT NULL").all();
+        const { results: enrolledRows } = await db.prepare("SELECT default_zone, COUNT(*) as c FROM prospects WHERE sequence IS NOT NULL AND default_zone IS NOT NULL GROUP BY default_zone").all();
+        const enrolledMap = {};
+        for (const r of enrolledRows || []) enrolledMap[String(r.default_zone)] = r.c;
+        const zones = Object.entries(ZONE_NAMES).map(([z, name]) => {
+          const owners = (ops || []).filter((o) => String(o.default_zone) === z);
+          const byVertical = {};
+          for (const v of ["dumpster", "hauling"]) {
+            const owner = owners.find((o) => (o.vertical || "dumpster") === v) || null;
+            byVertical[v] = { open: !owner, operator: owner ? { id: owner.id, name: owner.name, status: owner.operator_status } : null };
+          }
+          return { zone: z, name, operators: owners.map((o) => ({ id: o.id, name: o.name, status: o.operator_status, vertical: o.vertical || "dumpster" })), by_vertical: byVertical, enrolled_prospects: enrolledMap[z] || 0 };
+        });
+        return json({ zones, zone_names: ZONE_NAMES });
       }
       if (path === "/due-actions" && method === "GET") {
         const { results } = await db.prepare(
@@ -1929,9 +2116,6 @@ var worker_default = {
     ctx.waitUntil(handleSeoSnapshot(env));
   }
 };
-// Flip to true once a live event logs verify="match" to start rejecting
-// unsigned/forged calls. Left false during initial confirmation so a secret/
-// encoding mismatch can't drop real Mercury deliveries.
 var ENFORCE_MERCURY_SIG = false;
 async function hmacHexSHA256(keyBytes, message) {
   const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -1939,9 +2123,8 @@ async function hmacHexSHA256(keyBytes, message) {
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 __name(hmacHexSHA256, "hmacHexSHA256");
+__name2(hmacHexSHA256, "hmacHexSHA256");
 async function verifyMercuryHmac(raw, headers, secret) {
-  // Mercury signature header: "t=<unix>,v1=<hex hmac-sha256>" signed over
-  // `${t}.${rawBody}` (Stripe-style). Try the secret as UTF-8 and as base64.
   if (!secret) return "no_secret";
   const sig = headers["mercury-signature"] || headers["x-mercury-signature"] || null;
   if (!sig) return "no_sig_header";
@@ -1959,16 +2142,16 @@ async function verifyMercuryHmac(raw, headers, secret) {
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       if (await hmacHexSHA256(bytes, signed) === v1) return "match";
-    } catch (_) {}
+    } catch (_) {
+    }
     return "mismatch";
   } catch (e) {
     return "error";
   }
 }
 __name(verifyMercuryHmac, "verifyMercuryHmac");
+__name2(verifyMercuryHmac, "verifyMercuryHmac");
 async function updateCashOnHand(db, cash) {
-  // Keep the latest financials snapshot's cash_on_hand current. Update today's
-  // row if present; otherwise insert a new row carrying over the prior figures.
   const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const existing = await db.prepare("SELECT id FROM financials WHERE snapshot_date = ?").bind(today).first();
   if (existing) {
@@ -1979,49 +2162,50 @@ async function updateCashOnHand(db, cash) {
   await db.prepare(
     "INSERT INTO financials (snapshot_date, revenue, total_invested, google_ads_spend, twilio_spend, other_spend, total_spend, cash_on_hand, cashback_earned, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))"
   ).bind(
-    today, last.revenue ?? 0, last.total_invested ?? 0, last.google_ads_spend ?? 0,
-    last.twilio_spend ?? 0, last.other_spend ?? 0, last.total_spend ?? 0,
-    cash, last.cashback_earned ?? 0, last.notes || null
+    today,
+    last.revenue ?? 0,
+    last.total_invested ?? 0,
+    last.google_ads_spend ?? 0,
+    last.twilio_spend ?? 0,
+    last.other_spend ?? 0,
+    last.total_spend ?? 0,
+    cash,
+    last.cashback_earned ?? 0,
+    last.notes || null
   ).run();
 }
 __name(updateCashOnHand, "updateCashOnHand");
+__name2(updateCashOnHand, "updateCashOnHand");
 async function handleMercuryWebhook(request, db, env) {
-  // GET = Mercury's endpoint-verification probe → must return 200.
   if (request.method === "GET") return json({ ok: true });
   try {
     const raw = await request.text();
     let body = {};
-    try { body = JSON.parse(raw || "{}"); } catch (_) { body = {}; }
+    try {
+      body = JSON.parse(raw || "{}");
+    } catch (_) {
+      body = {};
+    }
     const headers = {};
     for (const [k, v] of request.headers) headers[k] = v;
     const verify = await verifyMercuryHmac(raw, headers, env.MERCURY_WEBHOOK_SECRET);
     if (ENFORCE_MERCURY_SIG && verify === "mismatch") return err("Invalid signature", 401);
-
-    // Mercury balance.updated events are JSON Merge Patch: resourceType
-    // (checkingAccount/savingsAccount/creditAccount), resourceId, and the changed
-    // balance in mergePatch (availableBalance / currentBalance).
     const resourceType = body.resourceType || null;
     const resourceId = body.resourceId || null;
     const op = body.operationType || null;
     const patch = body.mergePatch || {};
     const availBal = patch.availableBalance ?? null;
     const currBal = patch.currentBalance ?? null;
-    const eventType = resourceType && op ? `${resourceType}.${op}` : (body.eventType || null);
+    const eventType = resourceType && op ? `${resourceType}.${op}` : body.eventType || null;
     const changed = Array.isArray(body.changedPaths) ? body.changedPaths.join(",") : null;
     const newBal = availBal ?? currBal;
-
     let cash = null;
     try {
       await db.prepare("CREATE TABLE IF NOT EXISTS mercury_accounts (resource_id TEXT PRIMARY KEY, resource_type TEXT, available_balance REAL, current_balance REAL, updated_at TEXT)").run();
       if (resourceId && (availBal !== null || currBal !== null)) {
         await db.prepare(
-          "INSERT INTO mercury_accounts (resource_id, resource_type, available_balance, current_balance, updated_at) VALUES (?,?,?,?,datetime('now')) " +
-          "ON CONFLICT(resource_id) DO UPDATE SET resource_type=excluded.resource_type, " +
-          "available_balance=COALESCE(excluded.available_balance, mercury_accounts.available_balance), " +
-          "current_balance=COALESCE(excluded.current_balance, mercury_accounts.current_balance), updated_at=datetime('now')"
+          "INSERT INTO mercury_accounts (resource_id, resource_type, available_balance, current_balance, updated_at) VALUES (?,?,?,?,datetime('now')) ON CONFLICT(resource_id) DO UPDATE SET resource_type=excluded.resource_type, available_balance=COALESCE(excluded.available_balance, mercury_accounts.available_balance), current_balance=COALESCE(excluded.current_balance, mercury_accounts.current_balance), updated_at=datetime('now')"
         ).bind(resourceId, resourceType, availBal, currBal).run();
-        // cash on hand = available balance across checking + savings only
-        // (creditAccount is a liability, tracked but excluded).
         const row = await db.prepare("SELECT COALESCE(SUM(available_balance),0) AS cash FROM mercury_accounts WHERE resource_type IN ('checkingAccount','savingsAccount')").first();
         cash = row ? row.cash : null;
         if (typeof cash === "number") await updateCashOnHand(db, cash);
@@ -2029,12 +2213,10 @@ async function handleMercuryWebhook(request, db, env) {
     } catch (e) {
       console.error("mercury balance sync failed:", e);
     }
-
     const envelope = JSON.stringify({ verify, cash_on_hand: cash, headers, body });
     try {
       await db.prepare("CREATE TABLE IF NOT EXISTS mercury_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT, amount REAL, description TEXT, raw TEXT, received_at TEXT DEFAULT (datetime('now')))").run();
-      await db.prepare("INSERT INTO mercury_events (event_type, amount, description, raw) VALUES (?, ?, ?, ?)")
-        .bind(eventType, typeof newBal === "number" ? newBal : null, changed, envelope).run();
+      await db.prepare("INSERT INTO mercury_events (event_type, amount, description, raw) VALUES (?, ?, ?, ?)").bind(eventType, typeof newBal === "number" ? newBal : null, changed, envelope).run();
     } catch (e) {
       console.error("mercury_events insert failed:", e);
     }
@@ -2045,6 +2227,7 @@ async function handleMercuryWebhook(request, db, env) {
   }
 }
 __name(handleMercuryWebhook, "handleMercuryWebhook");
+__name2(handleMercuryWebhook, "handleMercuryWebhook");
 async function handleTwilioInbound(request, db, env) {
   try {
     const form = await request.formData();
@@ -2109,6 +2292,7 @@ async function handleTwilioInbound(request, db, env) {
 }
 __name(handleTwilioInbound, "handleTwilioInbound");
 __name2(handleTwilioInbound, "handleTwilioInbound");
+__name22(handleTwilioInbound, "handleTwilioInbound");
 async function handleFormSubmission(request, db, env) {
   try {
     let body;
@@ -2161,6 +2345,7 @@ async function handleFormSubmission(request, db, env) {
 }
 __name(handleFormSubmission, "handleFormSubmission");
 __name2(handleFormSubmission, "handleFormSubmission");
+__name22(handleFormSubmission, "handleFormSubmission");
 async function handleCallRailWebhook(request, db, env) {
   try {
     const body = await request.json();
@@ -2168,16 +2353,28 @@ async function handleCallRailWebhook(request, db, env) {
     const duration = body.duration || body.total_duration || 0;
     const callerName = body.caller_name || body.customer_name || null;
     const callerPhone = body.caller_number || body.customer_phone_number || null;
-    // Voice Assist captures the real service + ZIP; CallRail's caller_city is
-    // geo/area-code derived and unreliable, so prefer the captured location.
     const extracted = extractCallRailFields(body);
     const projectType = extracted.service;
     const cityStore = extracted.location || body.caller_city || body.city || null;
     const zone = detectZone(extracted.zip || extracted.city || body.caller_city || body.city || "");
     const score = scoreCall(duration);
-    if (duration < SPAM_MIN_DURATION) {
-      console.log(`Spam filtered: call_id=${callId} duration=${duration}s caller=${callerPhone}`);
-      return json({ success: true, filtered: true, reason: "spam_short_call", duration });
+    // Voice Assist intake is the authoritative "real lead" signal: a captured
+    // service/name means a person actually spoke to the AI assistant, no matter
+    // how short the call was. Robocall recordings that Voice Assist talks over
+    // come in with a padded duration but no coherent intake, so call length
+    // alone can't tell them apart (a 41s voicemail once passed the old filter
+    // and created a junk lead). Keep any call with real intake regardless of
+    // length; for calls with NO intake, fall back to the short-call filter and
+    // also drop voicemail/unanswered. When Voice Assist is off (no trial) no
+    // intake is ever present, so this reduces to the original duration filter.
+    const va = body.voice_assist_message || {};
+    const vaContents = va.ordered_content_with_overrides || va.contents || {};
+    const hasVoiceAssistIntake = !!(pickFirst(vaContents.product_service_interest, vaContents.name, vaContents.purpose) || extracted.service);
+    const isVoicemail = body.call_type === "voicemail" || body.answered === false;
+    if (!hasVoiceAssistIntake && (isVoicemail || duration < SPAM_MIN_DURATION)) {
+      const reason = isVoicemail ? "no_intake_voicemail" : "spam_short_call";
+      console.log(`Spam filtered: call_id=${callId} duration=${duration}s answered=${body.answered} intake=false reason=${reason}`);
+      return json({ success: true, filtered: true, reason, duration });
     }
     if (callId) {
       const existing = await db.prepare("SELECT id FROM leads WHERE callrail_call_id = ?").bind(String(callId)).first();
@@ -2210,13 +2407,8 @@ async function handleCallRailWebhook(request, db, env) {
     ).run();
     const leadId = result.meta.last_row_id;
     await logLeadEvent(db, leadId, "created", { source: "callrail", score, duration, caller: callerPhone, zone, city: cityStore, project_type: projectType }, "system");
-    // Log the raw CallRail payload so the real Voice Assist field names can be
-    // confirmed from live calls (trial-period field discovery).
     await logLeadEvent(db, leadId, "callrail_raw", body, "system");
     await notifyOwner(env, db, { name: callerName, phone: callerPhone, city: cityStore, zone, project_type: projectType, score, source: "callrail" }, leadId);
-    // Inbound caller initiated contact → transactional reply permitted (STOP included).
-    // Omit city in the copy: CallRail's caller_city is unreliable and we don't want
-    // to name a wrong town to the customer.
     await sendCustomerSMS(env, { name: callerName, phone: callerPhone, service: projectType, city: null, source: "callrail", consent: true }, leadId);
     return json({ success: true, lead_id: leadId, score, zone, project_type: projectType, assigned_to: null }, 201);
   } catch (e) {
@@ -2226,6 +2418,7 @@ async function handleCallRailWebhook(request, db, env) {
 }
 __name(handleCallRailWebhook, "handleCallRailWebhook");
 __name2(handleCallRailWebhook, "handleCallRailWebhook");
+__name22(handleCallRailWebhook, "handleCallRailWebhook");
 async function handleAdsCampaignCriteria(request, env) {
   if (!env.GOOGLE_ADS_DEVELOPER_TOKEN || !env.GOOGLE_ADS_REFRESH_TOKEN) {
     return err("Google Ads API credentials not configured", 502);
@@ -2288,6 +2481,8 @@ async function handleAdsCampaignCriteria(request, env) {
 }
 __name(handleAdsCampaignCriteria, "handleAdsCampaignCriteria");
 __name2(handleAdsCampaignCriteria, "handleAdsCampaignCriteria");
+__name22(handleAdsCampaignCriteria, "handleAdsCampaignCriteria");
 export {
   worker_default as default
 };
+//# sourceMappingURL=index.js.map

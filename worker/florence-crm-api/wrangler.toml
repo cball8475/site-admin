@@ -11,6 +11,17 @@ binding = "DB"
 database_name = "florence-crm"
 database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
 
+# Service binding — the shared 'Mailer' WorkerEntrypoint on
+# florence-auto-outreach-emails. notifyOwner()'s lead-alert email uses env.MAILER
+# as the fallback path when RESEND_API_KEY is not set on this worker (it isn't).
+# MUST be declared here or `wrangler deploy` drops it and owner-alert emails
+# silently stop (SMS is unaffected).
+[[services]]
+binding = "MAILER"
+service = "florence-auto-outreach-emails"
+entrypoint = "Mailer"
+environment = "production"
+
 # Cron — daily SEO position snapshot at 06:00 UTC (handleSeoSnapshot).
 # MUST be declared here or `wrangler deploy` would drop the schedule.
 [triggers]
