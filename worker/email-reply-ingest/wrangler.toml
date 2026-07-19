@@ -1,0 +1,20 @@
+name = "email-reply-ingest"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Same florence-crm D1 database the CRM worker and outreach engine use.
+[[d1_databases]]
+binding = "DB"
+database_name = "florence-crm"
+database_id = "50e1fc12-682d-4d58-8506-93687a10dc36"
+
+# Optional plain var: FORWARD_TO — verified Email Routing destination the
+# original message is forwarded to (defaults to cball8475@gmail.com in code).
+#
+# ACTIVATION (one-time, Cloudflare dashboard — cannot be done from a session
+# without zone-scoped credentials):
+#   florencescservices.com zone → Email → Email Routing → Routing rules →
+#   edit the rule(s) for info@/charlie@ (or the catch-all) → Action:
+#   "Send to a Worker" → email-reply-ingest.
+# The worker forwards onward, so normal inbox delivery is preserved.

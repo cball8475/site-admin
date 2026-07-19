@@ -1,0 +1,22 @@
+name: Deploy email-reply-ingest
+
+# Deploys the Email Routing worker whenever its source changes on main.
+# Same pattern as deploy-worker.yml; reuses the CLOUDFLARE_API_TOKEN secret.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/email-reply-ingest/**'
+      - '.github/workflows/deploy-email-ingest.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker/email-reply-ingest
