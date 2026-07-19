@@ -191,11 +191,11 @@ const SEQUENCES = [
     description: "After sending free leads â convert to paid.",
     steps: [
       { day: 0, type: "call", label: "Pilot Check-in Call",
-        template: `Hey {{firstName}}, Charlie here. Just checking in on those leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you X exclusive leads per month for your area. Pricing starts at $45/lead or $297/month for a set number. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
+        template: `Hey {{firstName}}, Charlie here. Just checking in on those leads I sent over. How'd they go?\n\n[IF GOOD] Awesome, glad to hear it. So here's how the full program works â we send you X exclusive leads per month for your area. Pricing is a flat $297/month — no per-lead charges, ever. Want me to send over the details?\n\n[IF NO RESPONSE TO LEADS] No worries â sometimes timing is tricky. Did you get a chance to call them back? I can resend the info if helpful.`
       },
       { day: 3, type: "email", label: "Pilot Results + Offer",
         subject: "Your pilot results + next steps",
-        template: `Hi {{firstName}},\n\nHope the pilot leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ $45/lead (pay per lead) or $297/mo for a set volume\nâ¢ You're the only partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
+        template: `Hi {{firstName}},\n\nHope the pilot leads worked out well for {{company}}.\n\nHere's what the full partnership looks like:\n\nâ¢ Exclusive leads for your area â no sharing with competitors\nâ¢ Flat $297/mo for a set volume â never pay-per-lead\nâ¢ You're the only partner we send to in your zone\n\nWant to lock in your area before I reach out to other operators?\n\nCharlie`
       },
       { day: 7, type: "call", label: "Close Call",
         template: `Hey {{firstName}}, following up on the partnership details I sent over. Any questions? I've got another operator interested in the same area, wanted to give you first shot since you were already in the pilot. What do you think?`

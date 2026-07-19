@@ -22,6 +22,25 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-19 — Pricing canon: flat monthly ONLY, founders rate $197
+
+**FSC never charges per-lead — flat monthly only ("that's my whole thing" —
+Charlie).** Standard: $297/mo (hauling also has $397/mo Growth tier).
+**Founders rate: $197/mo** — offered to early operator partners at Charlie's
+discretion; SOMO Trash gets it after their 2-month free trial (through
+~2026-09-15; extended from 1 month as reciprocity for SOMO comping Charlie's
+personal pickup). The dashboard's dumpster pilot-followup scripts wrongly
+said "$45/lead or $297/mo" — fixed 2026-07-19 to flat-rate language.
+
+## 2026-07-19 — Email reply ingestion ACTIVE (charlie@ + info@)
+
+Charlie flipped both routes to the email-reply-ingest worker in the Cloudflare
+dash; FORWARD_TO var set to charlieflorencescservices@gmail.com (the inbox all
+business addresses forward to — NOT cball8475@gmail.com, which is why the SOMO
+reply wasn't findable in the cball8475 Gmail connector). All mail passes
+through and still lands in the same inbox; prospect replies now auto-log +
+halt sequences + suppress.
+
 ## 2026-07-19 — Reply ingestion worker deployed (email-reply-ingest)
 
 New Email Worker `email-reply-ingest` (source: `worker/email-reply-ingest/`,
