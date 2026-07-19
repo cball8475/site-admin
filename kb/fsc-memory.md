@@ -22,6 +22,20 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-19 — Reply ingestion worker deployed (email-reply-ingest)
+
+New Email Worker `email-reply-ingest` (source: `worker/email-reply-ingest/`,
+auto-deploys via deploy-email-ingest.yml): on inbound mail it matches the
+sender against `prospects`, logs a `reply` activity with a body excerpt,
+halts the sequence, suppresses the address (`replied_auto`), writes
+`reply_received` to outreach_log, then forwards to the owner inbox
+(FORWARD_TO var, default cball8475@gmail.com). Non-prospect mail is logged as
+`inbound_nonprospect` and forwarded. **NOT ACTIVE until Charlie flips Email
+Routing** (session tokens lack zone Email Routing perms): Cloudflare dash →
+florencescservices.com → Email → Email Routing → Routing rules → edit the
+info@/charlie@ rules (or catch-all) → Action "Send to a Worker" →
+email-reply-ingest. Forwarding is preserved, so inbox behavior is unchanged.
+
 ## 2026-07-19 — Dashboard was locked out of CRM (token drift) + SOMO Trash trial accepted
 
 ### Root cause of the stale dashboard (outreach/pipeline/prospects tabs)
