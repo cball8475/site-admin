@@ -22,6 +22,41 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-19 — Dashboard was locked out of CRM (token drift) + SOMO Trash trial accepted
+
+### Root cause of the stale dashboard (outreach/pipeline/prospects tabs)
+The Netlify-built dashboard's baked `VITE_CRM_API_TOKEN` (set Jun 5) no longer
+matched the worker's `API_TOKEN` → every authed call to
+`api.florencescservices.com` returned 401 → tabs silently fell back to seed
+data. The outreach engine kept working the whole time (it writes to D1 directly
+and its own `CRM_API_TOKEN` was valid), so data was current in D1 but invisible.
+The fsc-credentials registry's CRM bearer was ALSO stale (second consumer missed
+by an earlier rotation) — **Charlie: update the fsc-credentials skill registry;
+the CRM API Bearer it lists is dead.**
+
+### Token rotation (2026-07-19, no values here — public repo)
+`API_TOKEN` rotated on florence-crm-api and synced to ALL consumers in one
+sweep: florence-auto-outreach-emails + florence-dashboard-proxy +
+florence-lead-capture (`CRM_API_TOKEN` each) and Netlify `VITE_CRM_API_TOKEN`
+(env var updated + rebuild triggered via deploy-trigger.txt). Verified live:
+new token returns 200/12 prospects. **Rotation SOP: these 5 consumers, always
+all of them, then a Netlify rebuild — a missed consumer is exactly how the
+dashboard broke.**
+
+### SOMO Trash LLC — junk-hauling trial ACCEPTED (2nd hauling operator)
+Chestly Morris (info@somotrash.com) replied Wed 2026-07-15 8:31 AM ET:
+*"We will try it for the first month. What do the costs look like after
+month 1?"* — recorded in CRM 07-19: stage `contacted → pilot_active`,
+`operator_status=active`, vertical hauling, Zone 4 (Darlington), sequence
+halted, email suppressed (`replied_positive`). **Open item: Charlie owes
+Chestly an answer on month-2+ pricing.** Note: the engine auto-sent the
+"Not-Angi" step3 email 3.5h AFTER the acceptance — replies are not ingested
+anywhere (they land in an inbox only; sender shows via cloudflare-email.net).
+Known gap: build reply ingestion (Cloudflare Email Routing worker → CRM
+activity + auto-suppress + owner alert) so a reply always halts the sequence
+same-day. Active hauling operators now: Kaylor Junk Removal (Zone 7),
+SOMO Trash (Zone 4).
+
 ## 2026-07-19 — CallRail Voice Assist trial #2: intake-based spam gate (v2.26.0)
 
 New 14-day Voice Assist trial. Instead of restoring the trial-era duration
