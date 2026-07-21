@@ -1976,7 +1976,7 @@ export default function App() {
           <line x1="18" y1="128" x2="18" y2="140" stroke="#ffffff" strokeWidth="1.5"/>
           <line x1="182" y1="128" x2="182" y2="140" stroke="#ffffff" strokeWidth="1.5"/>
         </svg>
-        <span style={{fontWeight:500,fontSize:10,color:"rgba(255,255,255,0.38)",letterSpacing:"0.08em",borderLeft:`1px solid ${C.border}`,paddingLeft:"0.6rem"}}>DASHBOARD <span title="build stamp" style={{color:"#22c55e",fontWeight:700}}>v0721</span></span>
+        <span style={{fontWeight:500,fontSize:10,color:"rgba(255,255,255,0.38)",letterSpacing:"0.08em",borderLeft:`1px solid ${C.border}`,paddingLeft:"0.6rem"}}>DASHBOARD <span title="build stamp" style={{color:"#22c55e",fontWeight:700}}>v0721b</span></span>
         <div style={{display:"flex",gap:3,marginLeft:"0.65rem"}}>
           {[["crm","🚀 Outreach Engine"],["leads","📊 Leads"],["snapshot","📊 Snapshot"]].map(([key,label])=>(
             <button key={key} onClick={()=>setMainTab(key)}
