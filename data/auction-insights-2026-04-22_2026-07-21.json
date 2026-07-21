@@ -1,0 +1,96 @@
+{
+ "report": "google_ads_auction_insights",
+ "period": {
+  "start": "2026-04-22",
+  "end": "2026-07-21"
+ },
+ "note": "Ads deliberately paused 2026-06-24; report mostly reflects the active Apr-Jun window. Competitors are dumpster-vertical; junk-king.com presence shows junk-removal ads space has one national player at <10% share.",
+ "you": {
+  "impression_share": "48.11%",
+  "top_of_page_rate": "62.38%",
+  "abs_top_of_page_rate": "33.97%"
+ },
+ "competitors": [
+  {
+   "domain": "priority-dumpster.com",
+   "impression_share": "16.07%",
+   "overlap_rate": "21.31%",
+   "position_above_rate": "26.13%",
+   "top_of_page_rate": "50.57%",
+   "abs_top": "10.92%",
+   "outranking_share": "45.43%"
+  },
+  {
+   "domain": "bargaindumpster.com",
+   "impression_share": "14.87%",
+   "overlap_rate": "17.08%",
+   "position_above_rate": "47.19%",
+   "top_of_page_rate": "75.16%",
+   "abs_top": "37.27%",
+   "outranking_share": "44.23%"
+  },
+  {
+   "domain": "wm.com",
+   "impression_share": "13.85%",
+   "overlap_rate": "17.85%",
+   "position_above_rate": "35.48%",
+   "top_of_page_rate": "89.33%",
+   "abs_top": "26.00%",
+   "outranking_share": "45.06%"
+  },
+  {
+   "domain": "capitalwaste.com",
+   "impression_share": "10.80%",
+   "overlap_rate": "13.82%",
+   "position_above_rate": "38.89%",
+   "top_of_page_rate": "73.50%",
+   "abs_top": "20.51%",
+   "outranking_share": "45.52%"
+  },
+  {
+   "domain": "junk-king.com",
+   "impression_share": "<10%",
+   "overlap_rate": "8.06%",
+   "position_above_rate": "19.05%",
+   "top_of_page_rate": "58.73%",
+   "abs_top": "11.11%",
+   "outranking_share": "47.37%"
+  },
+  {
+   "domain": "ibintheredumpthat.com",
+   "impression_share": "<10%",
+   "overlap_rate": "6.72%",
+   "position_above_rate": "51.43%",
+   "top_of_page_rate": "63.64%",
+   "abs_top": "36.36%",
+   "outranking_share": "46.45%"
+  },
+  {
+   "domain": "thumbtack.com",
+   "impression_share": "<10%",
+   "overlap_rate": "5.95%",
+   "position_above_rate": "70.97%",
+   "top_of_page_rate": "87.72%",
+   "abs_top": "29.82%",
+   "outranking_share": "46.08%"
+  },
+  {
+   "domain": "dumpsterwise.com",
+   "impression_share": "<10%",
+   "overlap_rate": "6.91%",
+   "position_above_rate": "47.22%",
+   "top_of_page_rate": "51.47%",
+   "abs_top": "25.00%",
+   "outranking_share": "46.54%"
+  },
+  {
+   "domain": "google.com",
+   "impression_share": "<10%",
+   "overlap_rate": "9.40%",
+   "position_above_rate": "55.10%",
+   "top_of_page_rate": "80.33%",
+   "abs_top": "13.11%",
+   "outranking_share": "45.61%"
+  }
+ ]
+}
