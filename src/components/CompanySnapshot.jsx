@@ -1,7 +1,7 @@
-// CompanySnapshot.jsx â comprehensive FSC business snapshot
+// CompanySnapshot.jsx — comprehensive FSC business snapshot
 // Pulls from florence-crm-api:
 //   /stats, /leads/analytics, /ads/metrics, /seo/metrics, /prospects
-// Each section is independent â one source failing won't crash the whole tile.
+// Each section is independent — one source failing won't crash the whole tile.
 //
 // Required Netlify env: VITE_CRM_API_URL, VITE_CRM_API_TOKEN
 
@@ -15,7 +15,7 @@ import FinancialsPanel from './FinancialsPanel';
 const API_BASE = import.meta.env.VITE_CRM_API_URL || '/api';
 const API_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || '';
 
-// ââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Styles ─────────────────────────────────────────────────────────────────
 const C = {
   bg: '#070d14', panel: '#0e1a26', card: '#142031',
   border: 'rgba(99,179,237,0.12)', borderStrong: 'rgba(99,179,237,0.22)',
@@ -23,7 +23,7 @@ const C = {
   green: '#22c55e', amber: '#f59e0b', blue: '#38bdf8', red: '#ef4444', purple: '#a78bfa',
 };
 
-// ââ Status (RYG) ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Status (RYG) ──────────────────────────────────────────────────────────
 // Status = 'green' | 'yellow' | 'red' | null (neutral, no bar shown)
 const STATUS_COLOR = {
   green: '#22c55e',
@@ -33,8 +33,8 @@ const STATUS_COLOR = {
 
 // Trend-based status: compare current vs previous period.
 // Volatility floor: if both periods are below `minSample`, return null (neutral).
-// `lowerBetter`: for spend, CPC, position â flips so down = good.
-// `yellowMax`: % degradation that's still yellow (default 25). Beyond â red.
+// `lowerBetter`: for spend, CPC, position — flips so down = good.
+// `yellowMax`: % degradation that's still yellow (default 25). Beyond → red.
 function trendStatus(current, previous, opts = {}) {
   const { lowerBetter = false, minSample = 0, yellowMax = 25 } = opts;
   const c = Number(current) || 0;
@@ -49,7 +49,7 @@ function trendStatus(current, previous, opts = {}) {
 }
 
 // Absolute-band status: bucket a single value against fixed thresholds.
-// `lowerBetter`: â¤ greenAt is green (e.g. position, CPC).
+// `lowerBetter`: ≤ greenAt is green (e.g. position, CPC).
 function absoluteStatus(value, opts = {}) {
   const { greenAt, yellowAt, lowerBetter = false } = opts;
   const v = Number(value);
@@ -67,7 +67,7 @@ function absoluteStatus(value, opts = {}) {
 const fontStack = "'IBM Plex Sans', system-ui, sans-serif";
 const monoStack = "'IBM Plex Mono', monospace";
 
-// ââ Utilities ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Utilities ──────────────────────────────────────────────────────────────
 const fmtMoney = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const fmtMoneyDecimal = (n) => '$' + Number(n || 0).toFixed(2);
 const fmtNum = (n) => Number(n || 0).toLocaleString('en-US');
@@ -99,19 +99,19 @@ async function fetchJson(path, init = {}) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`${path} â ${res.status}: ${body.slice(0, 120)}`);
+    throw new Error(`${path} → ${res.status}: ${body.slice(0, 120)}`);
   }
   return res.json();
 }
 
-// ââ Tiny components ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Tiny components ────────────────────────────────────────────────────────
 function Delta({ value, suffix = '%', invert = false }) {
   if (value === null || value === undefined) return null;
   const n = Number(value);
   const isPositive = n > 0;
   const isGood = invert ? !isPositive : isPositive;
   const color = n === 0 ? C.muted : isGood ? C.green : C.red;
-  const arrow = n > 0 ? 'â' : n < 0 ? 'â' : 'â';
+  const arrow = n > 0 ? '↑' : n < 0 ? '↓' : '—';
   return (
     <span style={{ fontSize: 11, fontWeight: 600, color, marginLeft: 6 }}>
       {arrow}{Math.abs(n)}{suffix}
@@ -178,7 +178,7 @@ function ErrorBanner({ section, error }) {
       background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
       fontSize: 12, color: C.red, fontFamily: monoStack,
     }}>
-      {section} unavailable â {error}
+      {section} unavailable — {error}
     </div>
   );
 }
@@ -239,7 +239,7 @@ function InsightSummary({ tone = 'neutral', headline, action, actions = [], onCo
                 <input type="checkbox" style={{ marginTop: 3, cursor: 'pointer', accentColor: a.bar }}
                   onChange={() => onComplete(act.id)} title="Mark completed" />
               ) : (
-                <span style={{ color: a.bar, fontWeight: 700, fontSize: 12, marginTop: 1 }}>â</span>
+                <span style={{ color: a.bar, fontWeight: 700, fontSize: 12, marginTop: 1 }}>→</span>
               )}
               <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5, flex: 1 }}>{act.text}</span>
               {onDismiss && act.id && (
@@ -247,7 +247,7 @@ function InsightSummary({ tone = 'neutral', headline, action, actions = [], onCo
                   style={{
                     background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
                     fontSize: 10, padding: '2px 4px', flexShrink: 0, opacity: 0.5,
-                  }}>â</button>
+                  }}>✕</button>
               )}
             </div>
           ))}
@@ -270,7 +270,7 @@ function BreakdownTable({ rows, labelKey = 'label', valueKey = 'value', total })
         </div>
       )}
       {safeRows.map((row, i) => {
-        const label = row[labelKey] ?? 'â';
+        const label = row[labelKey] ?? '—';
         const value = Number(row[valueKey] || 0);
         const pct = total > 0 ? (value / total) * 100 : 0;
         return (
@@ -294,11 +294,11 @@ function BreakdownTable({ rows, labelKey = 'label', valueKey = 'value', total })
   );
 }
 
-// ââ Main Component âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Main Component ─────────────────────────────────────────────────────────
 export default function CompanySnapshot() {
   const [days, setDays] = useState(7);
 
-  // Each section has its own state â one failure doesn't crash the rest
+  // Each section has its own state — one failure doesn't crash the rest
   const [stats, setStats] = useState(null);
   const [leadsAnalytics, setLeadsAnalytics] = useState(null);
   const [ads, setAds] = useState(null);
@@ -352,7 +352,7 @@ export default function CompanySnapshot() {
     setLoading(false);
   }
 
-  // âââ Action Items (corrective action tracking) ââââââââââââââââââââââââââââ
+  // ─── Action Items (corrective action tracking) ────────────────────────────
   useEffect(() => { fetchActions(); }, []);
 
   async function fetchActions() {
@@ -389,11 +389,11 @@ export default function CompanySnapshot() {
     return actionItems.filter(a => a.section === section).map(a => ({ id: a.id, text: a.action_text }));
   }
 
-  // âââ Initial loading state ââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─── Initial loading state ──────────────────────────────────────────────
   if (loading && !stats && !ads && !seo) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontFamily: fontStack }}>
-        Loading company snapshotâ¦
+        Loading company snapshot…
       </div>
     );
   }
@@ -401,7 +401,7 @@ export default function CompanySnapshot() {
   return (
     <div style={{ fontFamily: fontStack, color: C.text, paddingBottom: 40 }}>
 
-      {/* ââ Header âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
         marginBottom: 18, flexWrap: 'wrap', gap: 12,
@@ -417,9 +417,9 @@ export default function CompanySnapshot() {
             fontSize: 11, color: C.muted, fontFamily: monoStack, marginTop: 4,
           }}>
             {ads?.current_range
-              ? `${fmtDate(ads.current_range.start)} â ${fmtDate(ads.current_range.end)}`
+              ? `${fmtDate(ads.current_range.start)} → ${fmtDate(ads.current_range.end)}`
               : `Last ${days} days`}
-            {' Â· vs prior period'}
+            {' · vs prior period'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -441,14 +441,14 @@ export default function CompanySnapshot() {
             background: 'transparent', color: C.muted,
             border: `1px solid ${C.border}`, cursor: 'pointer',
           }}>
-            â»
+            ↻
           </button>
         </div>
       </div>
 
-      {/* ââ Top KPI Row ââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Top KPI Row ────────────────────────────────────────────────── */}
       {(() => {
-        // Status for top KPIs â bespoke per metric per the agreed thresholds
+        // Status for top KPIs — bespoke per metric per the agreed thresholds
         const activeOps = stats?.active_operators ?? 0;
         const activePilots = stats?.active_pilots ?? 0;
         const opsStatus = activeOps >= 1 ? 'green' : activePilots >= 1 ? 'yellow' : 'red';
@@ -459,7 +459,7 @@ export default function CompanySnapshot() {
 
         // Conversion: only judge if at least 3 leads have resolved
         const convResolved = leadsAnalytics?.resolved ?? 0;
-        const convPct = parseFloat(leadsAnalytics?.conversion_rate); // "18.5%" â 18.5
+        const convPct = parseFloat(leadsAnalytics?.conversion_rate); // "18.5%" → 18.5
         const convStatus = (convResolved >= 3 && !isNaN(convPct))
           ? absoluteStatus(convPct, { greenAt: 15, yellowAt: 5 })
           : null;
@@ -472,7 +472,7 @@ export default function CompanySnapshot() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <StatCard
               label="Active Operators"
-              value={stats?.active_operators ?? 'â'}
+              value={stats?.active_operators ?? '—'}
               sub={
                 stats?.active_pilots != null
                   ? `${stats.active_pilots} on trial`
@@ -482,7 +482,7 @@ export default function CompanySnapshot() {
             />
             <StatCard
               label={`Leads (${days}d)`}
-              value={leadsAnalytics?.total_leads ?? 'â'}
+              value={leadsAnalytics?.total_leads ?? '—'}
               sub={
                 leadsAnalytics?.avg_response_time_minutes != null
                   ? `${Math.round(leadsAnalytics.avg_response_time_minutes)}m avg response`
@@ -492,7 +492,7 @@ export default function CompanySnapshot() {
             />
             <StatCard
               label="Conversion"
-              value={leadsAnalytics?.conversion_rate ?? 'â'}
+              value={leadsAnalytics?.conversion_rate ?? '—'}
               sub={
                 leadsAnalytics?.converted != null && leadsAnalytics?.resolved != null
                   ? `${leadsAnalytics.converted} of ${leadsAnalytics.resolved} resolved`
@@ -517,7 +517,7 @@ export default function CompanySnapshot() {
       {errors.stats && <div style={{ marginTop: 10 }}><ErrorBanner section="Stats" error={errors.stats} /></div>}
       {errors.leadsAnalytics && <div style={{ marginTop: 10 }}><ErrorBanner section="Lead analytics" error={errors.leadsAnalytics} /></div>}
 
-      {/* ââ Operator Status ââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Operator Status ────────────────────────────────────────────── */}
       <Section title="Operator Status">
         {errors.operators ? (
           <ErrorBanner section="Operators" error={errors.operators} />
@@ -526,7 +526,7 @@ export default function CompanySnapshot() {
         )}
       </Section>
 
-      {/* ââ Lead Pipeline ââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Lead Pipeline ──────────────────────────────────────────────── */}
       <Section
         title="Lead Pipeline"
         right={stats?.total_leads ? `${stats.total_leads} total leads` : null}
@@ -538,7 +538,7 @@ export default function CompanySnapshot() {
         )}
       </Section>
 
-      {/* ââ Financials (Mercury) ââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Financials (Mercury) ──────────────────────────────────────── */}
       <Section
         title="Financials"
         right={financials?.snapshot_date ? `Snapshot ${fmtDate(financials.snapshot_date)}` : null}
@@ -554,10 +554,10 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ââ Google Ads âââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Google Ads ─────────────────────────────────────────────────── */}
       <Section
-        title="Google Ads â FSC 1"
-        right={ads?.current_range ? `${fmtDate(ads.current_range.start)} â ${fmtDate(ads.current_range.end)}` : null}
+        title="Google Ads — FSC 1"
+        right={ads?.current_range ? `${fmtDate(ads.current_range.start)} → ${fmtDate(ads.current_range.end)}` : null}
       >
         {errors.ads ? (
           <ErrorBanner section="Google Ads" error={errors.ads} />
@@ -566,14 +566,14 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ââ Search Terms ââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Search Terms ──────────────────────────────────────────────── */}
       <Section
         title="Search Terms"
-        right={searchTerms?.date_range ? `${fmtDate(searchTerms.date_range.start)} â ${fmtDate(searchTerms.date_range.end)}` : null}
+        right={searchTerms?.date_range ? `${fmtDate(searchTerms.date_range.start)} → ${fmtDate(searchTerms.date_range.end)}` : null}
       >
         {errors.searchTerms ? (
           errors.searchTerms.includes('404') || errors.searchTerms.includes('Not found') ? (
-            <PendingPanel message="Search terms â coming soon." />
+            <PendingPanel message="Search terms — coming soon." />
           ) : (
             <ErrorBanner section="Search Terms" error={errors.searchTerms} />
           )
@@ -582,14 +582,14 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-            {/* ââ Competitors (Google Ads Auction Insights) ââââââââââââââââââââ */}
+            {/* ── Competitors (Google Ads Auction Insights) ──────────────────── */}
       <Section
         title="Competitive Landscape"
         right={competitors?.period_label || null}
       >
         {errors.competitors ? (
           errors.competitors.includes('404') || errors.competitors.includes('Not found') ? (
-            <PendingPanel message="Competitive landscape â coming soon." />
+            <PendingPanel message="Competitive landscape — coming soon." />
           ) : (
             <ErrorBanner section="Competitors" error={errors.competitors} />
           )
@@ -598,14 +598,14 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ââ SEO / GSC ââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── SEO / GSC ──────────────────────────────────────────────────── */}
       <Section
-        title="SEO â Search Console"
-        right={(seo?.date_range || seo?.current_range) ? `${fmtDate((seo.date_range || seo.current_range).start)} â ${fmtDate((seo.date_range || seo.current_range).end)}` : null}
+        title="SEO — Search Console"
+        right={(seo?.date_range || seo?.current_range) ? `${fmtDate((seo.date_range || seo.current_range).start)} → ${fmtDate((seo.date_range || seo.current_range).end)}` : null}
       >
         {errors.seo ? (
           errors.seo.includes('404') || errors.seo.includes('Not found') ? (
-            <PendingPanel message="SEO data unavailable â check API connection." />
+            <PendingPanel message="SEO data unavailable — check API connection." />
           ) : (
             <ErrorBanner section="SEO" error={errors.seo} />
           )
@@ -614,14 +614,14 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ââ Backlinks ââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Backlinks ──────────────────────────────────────────────────── */}
       <Section
         title="Backlinks (off-page SEO)"
         right={backlinks?.uploaded_at ? `Last updated ${fmtDate(backlinks.uploaded_at)}` : null}
       >
         {errors.backlinks ? (
           errors.backlinks.includes('404') || errors.backlinks.includes('Not found') ? (
-            <PendingPanel message="Backlinks â coming soon." />
+            <PendingPanel message="Backlinks — coming soon." />
           ) : (
             <ErrorBanner section="Backlinks" error={errors.backlinks} />
           )
@@ -630,20 +630,20 @@ export default function CompanySnapshot() {
         ) : null}
       </Section>
 
-      {/* ââ Footer âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
       <div style={{
         marginTop: 24, paddingTop: 12, borderTop: `1px solid ${C.border}`,
         display: 'flex', justifyContent: 'space-between',
         fontSize: 10, color: C.faint, fontFamily: monoStack,
       }}>
-        <span>florence-crm-api Â· windsor.ai Â· 1hr cache</span>
+        <span>florence-crm-api · windsor.ai · 1hr cache</span>
         <span>{ads?.fetched_at ? new Date(ads.fetched_at).toLocaleTimeString() : ''}</span>
       </div>
     </div>
   );
 }
 
-// ââ Operator Status Panel ââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Operator Status Panel ──────────────────────────────────────────────────
 function OperatorPanel({ operators, stats }) {
   if (!operators || operators.length === 0) {
     return (
@@ -684,9 +684,9 @@ function OperatorPanel({ operators, stats }) {
                   {op.name || op.short_name}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted, fontFamily: monoStack, marginTop: 2 }}>
-                  {op.contact_name || 'â'}
-                  {op.phone ? ` Â· ${op.phone}` : ''}
-                  {op.default_zone ? ` Â· Zone ${op.default_zone}` : ''}
+                  {op.contact_name || '—'}
+                  {op.phone ? ` · ${op.phone}` : ''}
+                  {op.default_zone ? ` · Zone ${op.default_zone}` : ''}
                 </div>
               </div>
               <div style={{
@@ -706,7 +706,7 @@ function OperatorPanel({ operators, stats }) {
                 }}>
                   <span>Day {Math.min(daysIn, trialLength)} of {trialLength}</span>
                   <span style={overdue ? { color: C.amber } : undefined}>
-                    {overdue ? `Trial ended Â· ${daysIn - trialLength}d overdue` : `${daysRemaining}d remaining`}
+                    {overdue ? `Trial ended · ${daysIn - trialLength}d overdue` : `${daysRemaining}d remaining`}
                   </span>
                 </div>
                 <div style={{
@@ -728,12 +728,12 @@ function OperatorPanel({ operators, stats }) {
   );
 }
 
-// ââ Lead Pipeline Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Lead Pipeline Panel ────────────────────────────────────────────────────
 function PipelinePanel({ stats, leadsAnalytics }) {
   if (!stats) return null;
 
   // Normalize stats arrays for display.
-  // Prefer the windowed analytics, but an empty array is truthy â so when the
+  // Prefer the windowed analytics, but an empty array is truthy — so when the
   // window has zero leads, fall back to the all-time /stats breakdown instead of
   // showing "No data" next to a non-zero total-leads count.
   const pick = (windowed, allTime) => (windowed && windowed.length ? windowed : (allTime || []));
@@ -783,8 +783,8 @@ function PipelinePanel({ stats, leadsAnalytics }) {
   );
 }
 
-// ââ Ads Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// ââ Search Terms Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Ads Panel ──────────────────────────────────────────────────────────────
+// ── Search Terms Panel ────────────────────────────────────────────────────
 const NEG_CANDIDATES = [
   '1 800 got junk', 'got junk', 'junk removal', 'junk haul',
   'trash haul away', 'haul away', 'dump florence', 'dump near',
@@ -815,7 +815,7 @@ function SearchTermsPanel({ data, actions = [], onComplete, onDismiss }) {
       <strong>{totals.unique_terms}</strong> terms triggered ads.
       Top converter: "<strong>{topConverter.search_term}</strong>" ({topConverter.ctr} CTR, {topConverter.conversions} conv).
       {negHits.length > 0 && <> {negHits.length} terms flagged as potential negatives.</>}
-      {broadPct > 60 && <> {broadPct}% of clicks from broad match â review for quality.</>}
+      {broadPct > 60 && <> {broadPct}% of clicks from broad match — review for quality.</>}
     </>);
   } else if (totalClicks >= 5) {
     tone = 'attention';
@@ -840,7 +840,7 @@ function SearchTermsPanel({ data, actions = [], onComplete, onDismiss }) {
         <MiniStat label="Total Spend" value={fmtMoneyDecimal(totals.total_spend || 0)} />
       </div>
 
-      {/* Horizontal bar chart â top 10 */}
+      {/* Horizontal bar chart — top 10 */}
       <div style={{
         background: C.panel, border: `1px solid ${C.border}`,
         borderRadius: 8, padding: 12, marginBottom: 12,
@@ -921,7 +921,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
 
   const outOfZoneClicks = (ads.out_of_zone || []).reduce((s, g) => s + Number(g.clicks || 0), 0);
 
-  // Status calcs â see thresholds in CompanySnapshot doc block
+  // Status calcs — see thresholds in CompanySnapshot doc block
   const ctrNum = parseFloat(String(t.ctr ?? '').replace('%', ''));
   const cpcNum = parseFloat(String(t.cpc ?? '').replace('$', ''));
   const status = {
@@ -930,7 +930,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
     impressions: trendStatus(t.impressions, p.impressions, { minSample: 50 }),
     ctr: !isNaN(ctrNum) ? absoluteStatus(ctrNum, { greenAt: 3, yellowAt: 1 }) : null,
     cpc: !isNaN(cpcNum) && cpcNum > 0 ? absoluteStatus(cpcNum, { greenAt: 3, yellowAt: 6, lowerBetter: true }) : null,
-    // Conversions: green â¥1, yellow if 0 (only if there was meaningful spend)
+    // Conversions: green ≥1, yellow if 0 (only if there was meaningful spend)
     conv: t.conversions >= 1 ? 'green' : (Number(t.spend) >= 5 ? 'yellow' : null),
   };
 
@@ -940,8 +940,8 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
         <MiniStat label="Spend" value={fmtMoneyDecimal(t.spend)} delta={deltaPct(t.spend, p.spend)} invert status={status.spend} />
         <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} status={status.clicks} />
         <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} status={status.impressions} />
-        <MiniStat label="CTR" value={t.ctr || 'â'} status={status.ctr} />
-        <MiniStat label="CPC" value={t.cpc || 'â'} status={status.cpc} />
+        <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
+        <MiniStat label="CPC" value={t.cpc || '—'} status={status.cpc} />
         <MiniStat label="Conv" value={fmtNum(t.conversions)} delta={deltaPct(t.conversions, p.conversions)} status={status.conv} />
       </div>
 
@@ -951,7 +951,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
           fontSize: 12, color: C.amber, fontWeight: 500,
         }}>
-          â  {outOfZoneClicks} click{outOfZoneClicks > 1 ? 's' : ''} from out-of-zone cities â review geo targeting
+          ⚠ {outOfZoneClicks} click{outOfZoneClicks > 1 ? 's' : ''} from out-of-zone cities — review geo targeting
         </div>
       )}
 
@@ -997,7 +997,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
         </div>
       )}
 
-      {/* Spend vs Clicks summary â efficiency + trend read */}
+      {/* Spend vs Clicks summary — efficiency + trend read */}
       {(() => {
         const spend = Number(t.spend) || 0;
         const clicks = Number(t.clicks) || 0;
@@ -1037,7 +1037,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
               Getting clicks (<strong>{clicks}</strong>) at a reasonable CPC (
               <strong>${cpc.toFixed(2)}</strong>) but{' '}
               <strong>zero conversions</strong> this period.
-              {cpcImproved && <> CPC is down vs. prior period â efficiency improving.</>}
+              {cpcImproved && <> CPC is down vs. prior period — efficiency improving.</>}
             </>
           );
           action = 'Traffic quality or landing page is the bottleneck. Review search terms for irrelevant queries and check that the CTA + phone number load correctly on mobile.';
@@ -1049,7 +1049,7 @@ function AdsPanel({ ads, actions = [], onComplete, onDismiss, onSync }) {
               {prevCpc > 0 && <> (was ${prevCpc.toFixed(2)} prior period)</>}
               .{' '}
               {clicksDown
-                ? <>Click volume is also down â competition may be tightening.</>
+                ? <>Click volume is also down — competition may be tightening.</>
                 : <>Click volume holding steady but cost per click is climbing.</>}
             </>
           );
@@ -1111,7 +1111,7 @@ function MiniStat({ label, value, delta, invert, status }) {
   );
 }
 
-// ââ Competitors Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Competitors Panel ──────────────────────────────────────────────────────
 function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
   const rows = data?.rows || [];
   if (rows.length === 0) {
@@ -1127,7 +1127,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
 
   // Helper: render a value safely (handles {value, is_upper_bound} or null)
   const fmtPct = (cell) => {
-    if (!cell) return 'â';
+    if (!cell) return '—';
     return cell.is_upper_bound ? `<${cell.value}%` : `${cell.value.toFixed(2)}%`;
   };
   const num = (cell) => (cell ? cell.value : 0);
@@ -1155,7 +1155,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
   const chartData = [
     { domain: 'You (FSC)', value: num(me?.impression_share), isFsc: true },
     ...byImprShare.map(r => ({
-      domain: r.domain.length > 22 ? r.domain.slice(0, 20) + 'â¦' : r.domain,
+      domain: r.domain.length > 22 ? r.domain.slice(0, 20) + '…' : r.domain,
       fullDomain: r.domain,
       value: num(r.impression_share),
       isUpper: r.impression_share?.is_upper_bound,
@@ -1190,10 +1190,10 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>
-              Top of page rate Â· <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.top_of_page_rate)}</span>
+              Top of page rate · <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.top_of_page_rate)}</span>
             </div>
             <div style={{ fontSize: 11, color: C.muted }}>
-              Absolute top rate Â· <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.abs_top_of_page_rate)}</span>
+              Absolute top rate · <span style={{ color: C.text, fontWeight: 600 }}>{fmtPct(me.abs_top_of_page_rate)}</span>
             </div>
           </div>
         </div>
@@ -1207,7 +1207,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
         <div style={{
           fontSize: 10, color: C.faint, textTransform: 'uppercase',
           letterSpacing: 0.8, fontWeight: 600, marginBottom: 8,
-        }}>Impression share â you vs competitors</div>
+        }}>Impression share — you vs competitors</div>
         <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 28)}>
           <BarChart data={chartData} layout="vertical"
             margin={{ top: 4, right: 40, left: 4, bottom: 0 }}>
@@ -1305,7 +1305,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
         </div>
       </div>
 
-      {/* Full table â collapsible-feeling small text */}
+      {/* Full table — collapsible-feeling small text */}
       <details style={{
         background: C.panel, border: `1px solid ${C.border}`,
         borderRadius: 8, overflow: 'hidden',
@@ -1373,7 +1373,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
           headline = (
             <>
               Dominant auction share at <strong>{myShare.toFixed(1)}%</strong>
-              {multiple && <> â {multiple}Ã your closest competitor</>}.
+              {multiple && <> — {multiple}× your closest competitor</>}.
               {topThreat && topThreatPct >= 40 && (
                 <> But <strong>{topThreat.domain}</strong> outranks you in <strong>{topThreatPct.toFixed(0)}%</strong> of head-to-head matchups, meaning you appear lower on the page when you both compete.</>
               )}
@@ -1390,7 +1390,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
               {topThreat && <> Biggest ranking threat: <strong>{topThreat.domain}</strong> ({topThreatPct.toFixed(0)}% outrank rate).</>}
             </>
           );
-          action = 'Hold strategy steady. Track impression share weekly â if it dips below 15%, increase budget or expand keyword targeting.';
+          action = 'Hold strategy steady. Track impression share weekly — if it dips below 15%, increase budget or expand keyword targeting.';
         } else {
           tone = 'attention';
           headline = (
@@ -1407,7 +1407,7 @@ function CompetitorsPanel({ data, actions = [], onComplete, onDismiss }) {
   );
 }
 
-// ââ Backlinks Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Backlinks Panel ────────────────────────────────────────────────────────
 function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
   const links = data?.links || [];
   const total = data?.total_referring_domains || links.length;
@@ -1416,21 +1416,21 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 
   // Health assessment based on count
   // <5 = thin, 5-15 = developing, 15-50 = healthy, 50+ = strong
-  let healthLabel = 'ð´ Thin';
+  let healthLabel = '🔴 Thin';
   let healthColor = C.red;
-  let healthMessage = 'Limited domain authority. Backlinks are a major SEO ranking factor â building 5â10 quality links over the next 90 days would meaningfully move position.';
+  let healthMessage = 'Limited domain authority. Backlinks are a major SEO ranking factor — building 5–10 quality links over the next 90 days would meaningfully move position.';
   if (total >= 50) {
-    healthLabel = 'ð¢ Strong';
+    healthLabel = '🟢 Strong';
     healthColor = C.green;
     healthMessage = 'Solid link profile. Continue adding editorial links to improve domain authority.';
   } else if (total >= 15) {
-    healthLabel = 'ð¡ Developing';
+    healthLabel = '🟡 Developing';
     healthColor = C.amber;
     healthMessage = 'Growing profile. Focus on editorial links from local news, blogs, or industry publications.';
   } else if (total >= 5) {
-    healthLabel = 'ð¡ Building';
+    healthLabel = '🟡 Building';
     healthColor = C.amber;
-    healthMessage = 'Foundation in place. Need editorial links â guest posts, local press mentions, partnerships.';
+    healthMessage = 'Foundation in place. Need editorial links — guest posts, local press mentions, partnerships.';
   }
 
   const typeColor = (type) => {
@@ -1442,7 +1442,7 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
 
-      {/* Hero â referring domain count + health */}
+      {/* Hero — referring domain count + health */}
       <div style={{
         padding: '14px 18px',
         background: 'rgba(99,179,237,0.04)',
@@ -1551,19 +1551,19 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
             <>
               Thin link profile. <strong>{total} referring domain{total !== 1 && 's'}</strong>
               {typeList.length > 0 && <> ({typeList.join(', ')})</>}.
-              {editorial === 0 && <> Zero editorial links â that's the gap that holds back domain authority.</>}
+              {editorial === 0 && <> Zero editorial links — that's the gap that holds back domain authority.</>}
             </>
           );
-          action = 'Pitch a local press story to Florence Morning News or SCNow â "small business connecting Pee Dee homeowners with local dumpster operators" is genuinely newsworthy at zero spend. Also look for guest-post opportunities on small-business or contractor blogs. One editorial link is worth roughly five citations for ranking.';
+          action = 'Pitch a local press story to Florence Morning News or SCNow — "small business connecting Pee Dee homeowners with local dumpster operators" is genuinely newsworthy at zero spend. Also look for guest-post opportunities on small-business or contractor blogs. One editorial link is worth roughly five citations for ranking.';
         } else if (total < 15 || editorial === 0) {
           tone = 'attention';
           headline = (
             <>
               Building profile. <strong>{total} referring domains</strong>, {editorial} editorial.
-              {editorial === 0 && <> Domain authority comes primarily from editorial links â directory citations help local SEO but don't move organic ranking much.</>}
+              {editorial === 0 && <> Domain authority comes primarily from editorial links — directory citations help local SEO but don't move organic ranking much.</>}
             </>
           );
-          action = 'Target one new editorial link per month â local press, industry blogs, or partner cross-links. When William signs CSA, swap links if his business has a site.';
+          action = 'Target one new editorial link per month — local press, industry blogs, or partner cross-links. When William signs CSA, swap links if his business has a site.';
         } else if (total < 50) {
           tone = 'neutral';
           headline = (
@@ -1592,21 +1592,21 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
         borderRadius: 6, fontSize: 10.5, color: C.muted, lineHeight: 1.5,
       }}>
         <strong style={{ color: C.text }}>Update cadence:</strong> backlinks change slowly.
-        Re-export from GSC â Links â External monthly and upload to refresh.
+        Re-export from GSC → Links → External monthly and upload to refresh.
       </div>
     </div>
   );
 }
 
-// ââ SEO Panel ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── SEO Panel ──────────────────────────────────────────────────────────────
 function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
   // The API returns flat { totals: {clicks, impressions, ctr, avg_position}, daily, top_queries, top_pages }.
-  // Normalize: read totals directly, map avg_position â position for display code.
+  // Normalize: read totals directly, map avg_position → position for display code.
   const normalizeTotals = (raw) => {
     if (!raw) return {};
     return { ...raw, position: raw.position || raw.avg_position || '' };
   };
-  // Current period totals â API returns seo.totals (flat, no current/previous wrapper).
+  // Current period totals — API returns seo.totals (flat, no current/previous wrapper).
   const t = normalizeTotals(seo.totals || {});
   // Previous period: seoPrev fetches 2x window. Derive the prior-only half by subtracting current from 2x.
   const pRaw = seoPrev?.totals || {};
@@ -1634,12 +1634,12 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
     position: !isNaN(posNum) ? absoluteStatus(posNum, { greenAt: 10, yellowAt: 30, lowerBetter: true }) : null,
   };
 
-  // Position delta â for display only (lower position = improvement, so flip sign)
+  // Position delta — for display only (lower position = improvement, so flip sign)
   const posDelta = (!isNaN(posNum) && p.position && p.position !== 'N/A')
     ? -1 * Math.round(((posNum - Number(p.position)) / Number(p.position)) * 100)
     : null;
 
-  // ââ Page categorization for Top Pages ââ
+  // ── Page categorization for Top Pages ──
   // Money pages = pages with buying intent (dumpster rental, services, pricing, homepage)
   // Resource pages = informational (landfill guides, blog, permits)
   const classifyPage = (path) => {
@@ -1656,8 +1656,8 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <MiniStat label="Clicks" value={fmtNum(t.clicks)} delta={deltaPct(t.clicks, p.clicks)} status={status.clicks} />
         <MiniStat label="Impressions" value={fmtNum(t.impressions)} delta={deltaPct(t.impressions, p.impressions)} status={status.impressions} />
-        <MiniStat label="CTR" value={t.ctr || 'â'} status={status.ctr} />
-        <MiniStat label="Avg Position" value={t.position || 'â'} delta={posDelta} status={status.position} />
+        <MiniStat label="CTR" value={t.ctr || '—'} status={status.ctr} />
+        <MiniStat label="Avg Position" value={t.position || '—'} delta={posDelta} status={status.position} />
       </div>
 
 
@@ -1696,7 +1696,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
       )}
 
 
-      {/* ââ Money Page Movement â position delta on buying-intent pages ââ */}
+      {/* ── Money Page Movement — position delta on buying-intent pages ── */}
       {seo.top_pages && seo.top_pages.length > 0 && (() => {
         const allPages = seo.top_pages.map(p => ({ ...p, path: p.path || p.page || p.page_url || '', type: classifyPage(p.path || p.page || p.page_url || '') }));
         const moneyPages = allPages.filter(p => p.type === 'money').sort((a, b) => b.impressions - a.impressions);
@@ -1724,7 +1724,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                 borderBottom: `1px solid ${C.border}`,
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
-                <span>ð° Money Page Movement</span>
+                <span>💰 Money Page Movement</span>
                 {seoPrev && <span style={{ color: C.faint, fontWeight: 400, textTransform: 'none', fontSize: 9 }}>vs {days * 2}-day avg</span>}
               </div>
               {moneyPages.length === 0 ? (
@@ -1736,7 +1736,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                 const delta = hasDelta ? prevPos - pos : null; // positive = improving
                 const posColor = pos <= 10 ? C.green : pos <= 20 ? '#22d3ee' : pos <= 30 ? C.amber : C.red;
                 const deltaColor = delta > 0.5 ? C.green : delta < -0.5 ? C.red : C.muted;
-                const deltaLabel = delta > 0.5 ? `â²${delta.toFixed(1)}` : delta < -0.5 ? `â¼${Math.abs(delta).toFixed(1)}` : 'â';
+                const deltaLabel = delta > 0.5 ? `▲${delta.toFixed(1)}` : delta < -0.5 ? `▼${Math.abs(delta).toFixed(1)}` : '—';
                 return (
                   <div key={i} style={{
                     padding: '10px 14px',
@@ -1773,7 +1773,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
               })}
             </div>
 
-            {/* SEO Fix Tracker â manual list of recently-optimized queries, tracks ranking direction since fix date */}
+            {/* SEO Fix Tracker — manual list of recently-optimized queries, tracks ranking direction since fix date */}
             {/* To add/remove: edit SEO_FIX_TRACKER array below. Each entry: { query, page, startDate (ISO), startPos } */}
             {(() => {
               const SEO_FIX_TRACKER = [
@@ -1802,9 +1802,9 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                     fontSize: 10, color: C.blue, textTransform: 'uppercase',
                     letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
                     borderBottom: `1px solid ${C.border}`,
-                  }}>ð¯ SEO Fix Tracker â Active Pushes</div>
+                  }}>🎯 SEO Fix Tracker — Active Pushes</div>
                   <div style={{ padding: '8px 14px 4px', fontSize: 10, color: C.faint, lineHeight: 1.4 }}>
-                    Direction of each optimized query since the fix shipped. Lower position = better. Re-indexing takes 1â3 weeks.
+                    Direction of each optimized query since the fix shipped. Lower position = better. Re-indexing takes 1–3 weeks.
                   </div>
                   {SEO_FIX_TRACKER.map((fix, i) => {
                     const match = queries.find(q => (q.query || '').toLowerCase() === fix.query.toLowerCase());
@@ -1824,15 +1824,15 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                       statusColor = C.muted;
                     }
 
-                    // ââ Mini position track chart ââââââââââââââââââââââââââââââ
-                    // Scale: position 50 (far left / worst) â position 1 (far right / best)
-                    // Page 1 zone = positions 1â10 (right-hand green band)
+                    // ── Mini position track chart ──────────────────────────────
+                    // Scale: position 50 (far left / worst) → position 1 (far right / best)
+                    // Page 1 zone = positions 1–10 (right-hand green band)
                     const CHART_W = 140, CHART_H = 28;
                     const TRACK_PADDING = 10;
                     const SCALE_MIN = 1, SCALE_MAX = 50;
                     const toX = (pos) => {
                       const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, pos));
-                      // map so pos=50 â left, pos=1 â right
+                      // map so pos=50 → left, pos=1 → right
                       return ((SCALE_MAX - clamped) / (SCALE_MAX - SCALE_MIN)) * (CHART_W - TRACK_PADDING * 2) + TRACK_PADDING;
                     };
                     const p1X = toX(10); // x-position of page-1 threshold
@@ -1854,11 +1854,11 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                           {/* Status chip */}
                           {currentPos == null ? (
                             <span style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
-                              â± Awaiting data
+                              ⏱ Awaiting data
                             </span>
                           ) : (
                             <span style={{ fontSize: 10, color: statusColor, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
-                              {delta > 0.5 ? `â² +${delta.toFixed(1)}` : delta < -0.5 ? `â¼ ${delta.toFixed(1)}` : 'â No change'}
+                              {delta > 0.5 ? `▲ +${delta.toFixed(1)}` : delta < -0.5 ? `▼ ${delta.toFixed(1)}` : '→ No change'}
                             </span>
                           )}
                         </div>
@@ -1868,7 +1868,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                           {/* Background track */}
                           <rect x={TRACK_PADDING} y={midY - 2} width={CHART_W - TRACK_PADDING * 2} height={4} rx={2}
                             fill="rgba(99,179,237,0.08)" stroke="rgba(99,179,237,0.12)" strokeWidth={0.5} />
-                          {/* Page 1 zone (positions 1â10, right side) */}
+                          {/* Page 1 zone (positions 1–10, right side) */}
                           <rect x={p1X} y={midY - 2} width={CHART_W - TRACK_PADDING - p1X} height={4} rx={2}
                             fill="rgba(34,197,94,0.18)" />
                           {/* Page 1 boundary tick */}
@@ -1902,8 +1902,8 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                         }}>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>{fix.page}</span>
                           <span>Start: <strong style={{ color: C.text }}>{startPos.toFixed(1)}</strong> ({fmtAge(age)} ago)</span>
-                          <span>Now: <strong style={{ color: statusColor }}>{currentPos != null ? currentPos.toFixed(1) : 'â'}</strong></span>
-                          {match && <span>{match.impressions}imp Â· {match.clicks}clk</span>}
+                          <span>Now: <strong style={{ color: statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+                          {match && <span>{match.impressions}imp · {match.clicks}clk</span>}
                         </div>
                       </div>
                     );
@@ -1912,7 +1912,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
               );
             })()}
 
-            {/* Resource Pages â collapsed */}
+            {/* Resource Pages — collapsed */}
             {resourcePages.length > 0 && (
               <details style={{
                 background: C.panel, border: `1px solid ${C.border}`,
@@ -1922,7 +1922,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                   padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
                   fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5,
                   textTransform: 'uppercase',
-                }}>ð Resource pages ({resourcePages.length})</summary>
+                }}>📄 Resource pages ({resourcePages.length})</summary>
                 {resourcePages.map((p, i) => {
                   const pos = Number(p.position);
                   return (
@@ -2013,7 +2013,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
           const ctrNum = parseFloat(String(p.ctr).replace('%', ''));
           return p.impressions >= 50 && ctrNum < 1 && Number(p.position) <= 30;
         });
-        // Biggest ranking opportunity â page 2+ queries with meaningful demand
+        // Biggest ranking opportunity — page 2+ queries with meaningful demand
         const bigOpp = queries
           .filter(q => Number(q.position) > 10 && q.impressions >= 10)
           .sort((a, b) => b.impressions - a.impressions)[0];
@@ -2030,7 +2030,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
               {clickDelta > 50 && <> Clicks <strong>{clickDelta > 0 ? '+' : ''}{clickDelta}%</strong> vs prior period.</>}
               {clickDelta <= 50 && clickDelta > 0 && <> Clicks up <strong>{clickDelta}%</strong>.</>}
               {Number(posImprovement) > 2 && (
-                <> Average position improved <strong>{posImprovement} spots</strong> ({pPos.toFixed(1)} â {cPos.toFixed(1)}).</>
+                <> Average position improved <strong>{posImprovement} spots</strong> ({pPos.toFixed(1)} → {cPos.toFixed(1)}).</>
               )}
             </>
           );
@@ -2056,14 +2056,14 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
         if (bigOpp) {
           actions.push(
             <span key="opp">
-              Push <strong>"{bigOpp.query}"</strong> to page 1 â currently position {bigOpp.position} with {fmtNum(bigOpp.impressions)} impressions of demand.
+              Push <strong>"{bigOpp.query}"</strong> to page 1 — currently position {bigOpp.position} with {fmtNum(bigOpp.impressions)} impressions of demand.
             </span>
           );
         }
         if (ctrOpp) {
           actions.push(
             <span key="ctr">
-              Optimize title/meta on <strong>{ctrOpp.path}</strong> ({fmtNum(ctrOpp.impressions)} impressions, {ctrOpp.ctr} CTR â better headline â more clicks at zero ranking cost).
+              Optimize title/meta on <strong>{ctrOpp.path}</strong> ({fmtNum(ctrOpp.impressions)} impressions, {ctrOpp.ctr} CTR — better headline → more clicks at zero ranking cost).
             </span>
           );
         }
@@ -2086,7 +2086,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
       }}>
         <strong style={{ color: C.text }}>Competitor names</strong> require SerpAPI/ValueSERP
         (~$25/mo) or weekly Google Ads Auction Insights export. Above is inferred from your
-        own GSC visibility â high-impression queries where you're page 2+ are where
+        own GSC visibility — high-impression queries where you're page 2+ are where
         competitors are winning the click.
       </div>
     </div>
