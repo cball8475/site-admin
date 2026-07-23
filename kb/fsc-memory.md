@@ -22,6 +22,40 @@ worker's `MEMORY_SEED`-style idempotent seed and deploy).
 
 ---
 
+## 2026-07-23 — EATON memory system upgraded to v3.9.0; token rotated; kb-search overlap
+
+The EATON worker (`eaton-ehs-api`) went v3.7.0 → v3.9.0 in one day. What FSC
+sessions need to know:
+
+- **Recall:** `GET /search?q=<question>&mode=hybrid` on the EATON API searches
+  knowledge + intel + tasks (FTS + semantic via the `eaton-memory` Vectorize
+  index, embedded at write time). Use it instead of per-endpoint `?q=` filters
+  when a session needs Eaton context.
+- **Token rotated 2026-07-23.** The old EATON bearer token leaked from the
+  public dashboard (hardcoded in client JS since ~May) and is dead. New value
+  lives in the EATON repo `infra/env.sh` (private repo) — never in this repo
+  (public). The dashboard now prompts once and stores it in localStorage.
+  `kb-search` and `d1-backup` are unaffected (they use D1 bindings, not the
+  bearer token).
+- **Backups:** EATON now has TWO paths — the Monday gzip export to GitHub
+  (`infra/backups/auto/`, restore tested via `infra/restore.sh`) plus the
+  existing nightly `d1-backup` R2 snapshots. Complementary; keep both
+  (different providers, different failure domains).
+- **DUPLICATION — decision needed:** `worker/kb-search` maintains its own
+  semantic index (`eaton-kb`, nightly rebuild 07:30 UTC) over the same EATON
+  tables that the new write-time `eaton-memory` index covers via
+  `/search?mode=semantic`. Two indexes, same corpus, one always up to a day
+  stale. Recommendation: retire kb-search's nightly cron and point its
+  consumers at `eaton-ehs-api /search` — but confirm nothing depends on
+  kb-search's response shape first. Until decided, both run; they don't
+  conflict, just double the embedding spend (~pennies).
+- **Patterns worth copying to FSC** (in value order): write-time conflict
+  flagging on memory POSTs (EATON returns `conflicts`/`has_conflicts` +
+  `superseded_by` chains — the `/memory` table here has unique-title upsert,
+  which silently overwrites instead of surfacing the conflict), tested
+  restore drill for florence-crm (d1-backup writes snapshots but a restore
+  has never been run), and `/trends`-style weekly deltas for the pipeline.
+
 ## 2026-07-19 — Pricing canon: flat monthly ONLY, founders rate $197
 
 **FSC never charges per-lead — flat monthly only ("that's my whole thing" —
