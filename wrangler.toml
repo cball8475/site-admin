@@ -1,0 +1,50 @@
+# fsc-dashboard — the site-admin SPA plus its same-origin /api proxy.
+#
+# This config lives at the repo root (not under worker/) because the static
+# assets it serves are this repo's Vite build output, ./dist. The other four
+# workers keep their own wrangler.toml under worker/<name>/ and are deployed
+# with `workingDirectory:` set, so they are unaffected by this file.
+#
+# Deploy: .github/workflows/deploy-dashboard.yml (builds ./dist, then deploys).
+
+name = "fsc-dashboard"
+main = "worker/dashboard/src/index.js"
+compatibility_date = "2026-07-25"
+# Account ID is not a secret (it appears in dashboard URLs); the API token is.
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# Static assets — the built SPA.
+#   run_worker_first = ["/api/*"]  → the worker script handles ONLY /api/*.
+#     Everything else is served directly from assets without invoking the worker.
+#     Passing an explicit array also opts out of Sec-Fetch-Mode implicit routing,
+#     so an /api/* XHR can never be mistaken for a navigation and swallowed by
+#     the SPA fallback below.
+#   not_found_handling = "single-page-application" → unmatched non-/api paths
+#     return index.html so client-side routes work on refresh.
+# Requires wrangler >= 4.20 for the array form of run_worker_first.
+[assets]
+directory = "./dist/"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = [ "/api/*" ]
+
+# The CRM bearer, read server-side at request time. Same store that already
+# holds EATON_TOKEN for eaton-ehs-api, so this introduces no new mechanism.
+# The deploying API token needs Secrets Store (read) scope.
+[[secrets_store_secrets]]
+binding = "CRM_API_TOKEN"
+store_id = "80c48360a0e54dd69425da2dfbde21ad"
+secret_name = "CRM_API_TOKEN"
+
+[vars]
+# Upstream CRM. Not a secret — it is already a public hostname.
+CRM_ORIGIN = "https://api.florencescservices.com"
+# Flip to "true" only after the Cloudflare Access policy is live and verified,
+# otherwise every /api call 401s. See docs/dashboard-deploy.md step 4.
+REQUIRE_ACCESS = "false"
+
+# Custom domain — Cloudflare creates and proxies the DNS record automatically.
+# Access policies attach to this hostname.
+[[routes]]
+pattern = "dashboard.florencescservices.com"
+custom_domain = true

@@ -7,8 +7,13 @@ import CompanySnapshot from "./components/CompanySnapshot";
 // Dev still uses local env vars for direct API access.
 // ══════════════════════════════════════════════════════════════
 const ENV_GPLACES = import.meta.env.VITE_GOOGLE_PLACES_KEY || "";
-const ENV_CRM_URL   = import.meta.env.VITE_CRM_API_URL || "/api";
-const ENV_CRM_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || "";
+// Prod is hard-coded to same-origin /api with no token: the fsc-dashboard worker
+// attaches the bearer server-side. Previously these read the env vars in prod
+// too, so setting VITE_CRM_API_URL + VITE_CRM_API_TOKEN in Netlify overrode the
+// intended proxy path and inlined the bearer into the public bundle. Pinning the
+// prod branch means no build-env mistake can reintroduce that.
+const ENV_CRM_URL   = import.meta.env.PROD ? "/api" : (import.meta.env.VITE_CRM_API_URL || "/api");
+const ENV_CRM_TOKEN = import.meta.env.PROD ? ""     : (import.meta.env.VITE_CRM_API_TOKEN || "");
 
 // ══════════════════════════════════════════════════════════════
 // LOCALSTORAGE — fast cache only

@@ -227,6 +227,19 @@ Then rotate `API_TOKEN` + the Netlify var, since the present value is burned.
 Also retire `florence-dashboard-proxy` — it 404s on every path and is a second,
 half-built proxy.
 
+**Remediation built — see `docs/dashboard-deploy.md`.** Rather than a Netlify Edge
+Function, this is one Cloudflare Worker (`fsc-dashboard`) serving the SPA and
+proxying `/api/*` with the bearer read from Secrets Store — the same store that
+already holds `EATON_TOKEN`, and Cloudflare Access gates the hostname. Note the
+client code was *already* written for this: `App.jsx` carried a comment saying the
+token stays server-side and calls go same-origin through a dashboard proxy, and
+`crmFetch` already omits the auth header when no token is present. The leak came
+from *setting* `VITE_CRM_API_URL` + `VITE_CRM_API_TOKEN` in Netlify, which
+overrode the intended `/api` fallback and pulled the bearer into the bundle. Prod
+is now pinned to `/api` with no token so no build-env mistake can reintroduce it,
+and the deploy workflow fails the build if a `VITE_*_TOKEN` is present or if a
+credential shape appears in `dist/`.
+
 ### Finding 2 — `VITE_GITHUB_TOKEN` is orphaned
 
 Zero references in `src/`, and no PAT appears in the built bundle. Dashboard GitHub

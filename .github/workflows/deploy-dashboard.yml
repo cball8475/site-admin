@@ -1,0 +1,89 @@
+name: Deploy fsc-dashboard
+
+# Builds the site-admin SPA and deploys it as a Cloudflare Worker that also
+# proxies /api/* to florence-crm-api with the bearer attached server-side.
+#
+# Replaces the Netlify build. The Netlify project must be torn down once this is
+# live — while site-admin-fsc.netlify.app still answers, it serves an older
+# bundle with an embedded bearer and bypasses Cloudflare Access entirely.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN   — needs Workers Scripts (edit) + Secrets Store (read)
+#   VITE_GOOGLE_PLACES_KEY — browser key, referrer-restricted; public by design
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'worker/dashboard/**'
+      - 'wrangler.toml'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # The dashboard must never be built with a CRM bearer in the environment.
+      # Vite inlines VITE_* vars into the public bundle, which is exactly how the
+      # token leaked before. Fail the build rather than publish it again.
+      - name: Assert no CRM bearer in the build environment
+        env:
+          VITE_CRM_API_TOKEN: ${{ secrets.VITE_CRM_API_TOKEN }}
+          VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+        run: |
+          if [ -n "$VITE_CRM_API_TOKEN" ] || [ -n "$VITE_API_TOKEN" ]; then
+            echo "::error::A VITE_*_TOKEN repo secret is set. Vite would inline it into the public bundle — the bearer is attached server-side by the worker now. Delete the repo secret and re-run."
+            exit 1
+          fi
+
+      - name: Build
+        env:
+          VITE_GOOGLE_PLACES_KEY: ${{ secrets.VITE_GOOGLE_PLACES_KEY }}
+        run: npm run build
+
+      # Regression guard for audit Finding 1. Greps the built output for
+      # credential shapes that must never be client-side. `fsc_` is the CRM
+      # bearer prefix; the GitHub PAT prefixes are here because a previous
+      # Netlify var (VITE_GITHUB_TOKEN) would have published one.
+      - name: Assert no credentials in the built bundle
+        run: |
+          if grep -rEoh 'fsc_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' dist/ > /tmp/hits 2>/dev/null; then
+            echo "::error::Credential-shaped strings found in dist/ — refusing to publish. Matched $(wc -l < /tmp/hits) occurrence(s); prefixes only:"
+            cut -c1-12 /tmp/hits | sort -u
+            exit 1
+          fi
+          echo "Bundle scan clean — no bearer or PAT shapes in dist/."
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # The worker is useless without the Secrets Store secret, and a missing
+      # one fails at request time with a 503 rather than at deploy. Surface it
+      # here instead of leaving it to be discovered in the browser.
+      - name: Post-deploy smoke test
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            https://dashboard.florencescservices.com/api/health || echo "000")
+          case "$code" in
+            200) echo "Proxy healthy — /api/health returned 200." ;;
+            503) echo "::error::Proxy deployed but the CRM bearer is unavailable (503). Create the CRM_API_TOKEN secret in Secrets Store and confirm the API token has Secrets Store (read) scope." ; exit 1 ;;
+            401|403) echo "::warning::/api/health returned $code — expected if Cloudflare Access is enforcing on this hostname. Verify manually in a browser." ;;
+            000) echo "::warning::Could not reach dashboard.florencescservices.com — DNS may still be propagating on first deploy." ;;
+            *) echo "::warning::/api/health returned $code — check the worker logs." ;;
+          esac

@@ -3,7 +3,9 @@
 //   /stats, /leads/analytics, /ads/metrics, /seo/metrics, /prospects
 // Each section is independent — one source failing won't crash the whole tile.
 //
-// Required Netlify env: VITE_CRM_API_URL, VITE_CRM_API_TOKEN
+// Prod needs no credentials: calls go same-origin to /api and the fsc-dashboard
+// worker attaches the bearer. Dev may set VITE_CRM_API_URL + VITE_CRM_API_TOKEN
+// in a local .env to hit the API directly.
 
 import { useState, useEffect } from 'react';
 import {
@@ -12,8 +14,8 @@ import {
 } from 'recharts';
 import FinancialsPanel from './FinancialsPanel';
 
-const API_BASE = import.meta.env.VITE_CRM_API_URL || '/api';
-const API_TOKEN = import.meta.env.VITE_CRM_API_TOKEN || '';
+const API_BASE = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_CRM_API_URL || '/api');
+const API_TOKEN = import.meta.env.PROD ? '' : (import.meta.env.VITE_CRM_API_TOKEN || '');
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const C = {
@@ -93,7 +95,10 @@ async function fetchJson(path, init = {}) {
   const res = await fetch(url, {
     ...init,
     headers: {
-      'Authorization': `Bearer ${API_TOKEN}`,
+      // Only send auth when we actually have a token (dev). In prod the worker
+      // attaches it — sending `Bearer ` with an empty value would just 401 if it
+      // ever reached the API directly.
+      ...(API_TOKEN ? { 'Authorization': `Bearer ${API_TOKEN}` } : {}),
       ...(init.headers || {}),
     },
   });

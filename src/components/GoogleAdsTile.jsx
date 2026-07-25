@@ -1,7 +1,7 @@
 // GoogleAdsTile.jsx — Google Ads performance tile for FSC dashboard
 // Pulls from /ads/metrics endpoint on florence-crm-api (v2.10.0+)
-// Requires: recharts (npm i recharts), VITE_API_BASE + VITE_API_TOKEN env vars
-// Drop into: site-admin/src/components/GoogleAdsTile.jsx
+// Prod needs no credentials: same-origin /api, bearer attached by fsc-dashboard.
+// Dev may set VITE_CRM_API_URL + VITE_CRM_API_TOKEN in a local .env.
 
 import { useState, useEffect } from 'react';
 import {
