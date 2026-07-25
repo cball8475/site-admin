@@ -55,18 +55,19 @@ secret_name = "CRM_API_TOKEN"
 # Upstream CRM. Not a secret — already a public hostname.
 CRM_ORIGIN = "https://api.florencescservices.com"
 
-# ── Cloudflare Access — fill both in before the app will serve anything ─────
-# Neither is a secret: the AUD tag is an audience identifier, not a credential.
-# While either is empty the worker refuses EVERY request except /__health, which
-# is the intended failure mode — unconfigured means locked, not open.
+# ── Cloudflare Access ───────────────────────────────────────────────────────
+# Read from the live account 2026-07-25. Neither is a secret: the AUD tag is an
+# audience identifier that travels in the JWT, not a credential. If either is
+# blanked the worker refuses EVERY request except /__health — unconfigured means
+# locked, not open.
 #
-#   ACCESS_TEAM_DOMAIN  https://<your-team-name>.cloudflareaccess.com
-#                       (Zero Trust → Settings → Custom Pages, or the team name
-#                       in your Zero Trust dashboard URL)
-#   ACCESS_POLICY_AUD   the Application Audience (AUD) tag shown on the Access
-#                       application's Overview tab after you create it
-ACCESS_TEAM_DOMAIN = ""
-ACCESS_POLICY_AUD = ""
+# Access application "FSC Dashboard" (id f584791f-cc99-45f0-90f1-e750c2c5cb43),
+# self-hosted on dashboard.florencescservices.com, 24h session, one policy
+# ("Charlie only", allow). Only identity provider on the account is One-time PIN,
+# so login is an emailed code — the policy's address must be a mailbox that is
+# actually readable. See docs/dashboard-deploy.md A3.
+ACCESS_TEAM_DOMAIN = "https://florencesc.cloudflareaccess.com"
+ACCESS_POLICY_AUD = "8e44f1070780a22a9b34ffe5b4a087875b8de28eae1581ecefa4a503c87eaaee"
 
 # Custom domain — Cloudflare creates and proxies the DNS record automatically.
 # The Access policy attaches to this hostname.

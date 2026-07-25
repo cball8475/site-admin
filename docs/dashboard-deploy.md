@@ -46,39 +46,78 @@ immediately breaks the Netlify dashboard (it carries the old baked token), which
 costs you the rollback in C2. Fine if you're deleting Netlify anyway; otherwise
 proceed in order and treat a 401 as the known, cheap failure.
 
-### A2. Add Secrets Store (read) to the deploy token
+### A2. Deploy token needs Secrets Store (read) — the one open item
 
-Cloudflare → My Profile → API Tokens → edit the token used by site-admin CI.
+Verified 2026-07-25: the account holds two tokens, **both named "CF Master
+Token"**, both active, both expiring 2027-05-24:
 
-It needs **Secrets Store (read)** on top of Workers Scripts (edit). This was
-already on the audit's open list; it now blocks this deploy. Without it every
-`/api` call returns 503.
+| id | last used | note |
+|---|---|---|
+| `d2fbf2c3633f5c7951cae84b724cc62d` | 2026-07-25 | confirmed to have Secrets Store (read) + Workers |
+| `b3a2b3be40a7ac94f4c10cd09428c88b` | **never** | unused active credential — delete it |
 
-### A3. Create the Access application
+Whether the repo's `CLOUDFLARE_API_TOKEN` is either of these could not be
+determined: an account-owned token cannot enumerate user-owned tokens, so a third
+user-owned token may be the one CI uses.
 
-Zero Trust → Access → Applications → **Add an application** → Self-hosted.
+**Decisive test:** deploy and read `/__health`. `crm_binding_present: false` (or a
+binding error at deploy) means the scope is missing. `503` on `/api/*` at runtime
+means the same thing.
 
-- **Application name:** `FSC Dashboard`
-- **Public hostname:** `dashboard.florencescservices.com`
-- **Session duration:** 24 hours is a reasonable default
-- **Policy:** Action `Allow` → Include → **Emails** → your address, plus anyone
-  else who should get in
-- **Identity provider:** Google works with the account already used for GA4;
-  email OTP ("One-time PIN") needs no IdP setup
+**Recommended instead of editing an existing token:** create one new
+least-privilege token — Workers Scripts (edit), Secrets Store (read), D1 (edit),
+R2 (edit), Vectorize (edit), Workers AI — put it in the site-admin repo secret,
+then delete both "CF Master Token"s. That resolves A2, retires a never-used
+credential, and replaces a master-scoped token in CI with a scoped one, in a
+single pass. A token literally named "master" is more authority than a dashboard
+deploy needs.
 
-Free tier covers up to 50 users.
+### A3. Access application — already exists, nothing to create
 
-You can create the app before the hostname resolves — the worker deploy in B3
-creates the DNS record.
+Verified 2026-07-25. Zero Trust org `florencesc.cloudflareaccess.com`:
 
-### A4. Copy the two values the worker needs
+- **FSC Dashboard** — self-hosted, `dashboard.florencescservices.com`, 24h
+  session, id `f584791f-cc99-45f0-90f1-e750c2c5cb43`
+- One policy: **"Charlie only"** → allow → include email
+  `charlie@florencescservices.com`
+- Account IdPs: **One-time PIN only** (no Google/SAML/OIDC configured)
 
-Neither is a secret; both go in `wrangler.toml` in Part B.
+Two other Access apps exist on the account: `eaton-ehs-cmd.pages.dev` and
+`*-florence-crm-api.cball8475.workers.dev`.
 
-- **AUD tag** — the Access application → Overview tab → *Application Audience
-  (AUD) Tag*. A long hex string.
-- **Team domain** — `https://<your-team-name>.cloudflareaccess.com`. The team
-  name is in your Zero Trust dashboard URL, or under Settings → Custom Pages.
+#### ⚠️ Verify you can actually receive the login code
+
+One-time PIN is the only identity provider, so signing in means reading a code
+emailed to `charlie@florencescservices.com` — the single address the policy
+allows. That address's deliverability is doubtful:
+
+- Email Routing on `florencescservices.com` delivers to the
+  **email-reply-ingest worker**, which logs arrivals to D1 rather than to a
+  mailbox — 104 `inbound_nonprospect` rows, most recent 2026-07-25 16:24.
+- Those rows include bounce senders whose VERP encodes
+  `charlie=florencescservices.com`, i.e. mail addressed to that mailbox has been
+  bouncing.
+
+If the code never arrives you cannot reach the dashboard. Not a hard lockout —
+you can edit the policy any time — but verify before assuming the cutover
+succeeded. Any of these fixes it:
+
+1. Add a second `include` email you definitely read (e.g. your Gmail). Fastest.
+2. Add an Email Routing rule so `charlie@florencescservices.com` forwards to a
+   real inbox ahead of the catch-all that feeds the ingest worker.
+3. Configure Google as an IdP — the GA4 account already exists — and switch the
+   policy to that.
+
+### A4. The two worker values — already filled in
+
+Read from the live account and committed to `wrangler.toml`; nothing to copy:
+
+```toml
+ACCESS_TEAM_DOMAIN = "https://florencesc.cloudflareaccess.com"
+ACCESS_POLICY_AUD = "8e44f1070780a22a9b34ffe5b4a087875b8de28eae1581ecefa4a503c87eaaee"
+```
+
+Neither is a secret — the AUD is an audience identifier that travels in the JWT.
 
 ---
 
@@ -152,15 +191,49 @@ Keep it until C1 passes — it's the rollback.
 
 The old value was publicly downloadable. Treat it as known.
 
-Check the secret's bindings first (see A1) so you know what else is affected.
+#### "Rotate here once" does not hold yet — read this first
+
+The Secrets Store comment says *"Shared FSC CRM bearer; guards florence-crm-api
+inbound + used by dashboard-proxy/lead-capture/outreach to call CRM. Rotate here
+once."* That is the right design, but the code doesn't implement it yet. Verified
+against deployed source 2026-07-25:
+
+| Worker | How it gets the bearer | Rotating Secrets Store reaches it? |
+|---|---|---|
+| florence-crm-api | `env.API_TOKEN` — plain worker secret, validates inbound. Zero Secrets Store usage in source or config | ❌ no |
+| florence-dashboard-proxy | `` `Bearer ${env.CRM_API_TOKEN}` `` — plain string interpolation, so a plain worker secret | ❌ no |
+| florence-lead-capture | same plain interpolation when POSTing to `/leads` | ❌ no |
+| florence-outreach | not yet verified — check before rotating | ❓ |
+| fsc-dashboard (new) | `await env.CRM_API_TOKEN.get()` — real Secrets Store binding | ✅ yes |
+
+A Secrets Store binding is an **object** requiring `await .get()`. Interpolating
+one into a template string yields `[object Object]`, so those two workers cannot
+be reading the Secrets Store copy — they hold their own duplicates.
+
+**So a rotation today is 5–6 places, not one:** florence-crm-api `API_TOKEN`,
+dashboard-proxy, lead-capture, outreach, Secrets Store, and Netlify until C2
+deletes it. Miss any and that caller 401s.
+
+**To make the comment true,** migrate each consumer to the Secrets Store binding —
+including florence-crm-api's inbound guard, which should read its expected token
+from Secrets Store the way eaton-ehs-api already reads `AUTH_TOKEN`
+(`env.AUTH_TOKEN.get()` with a fallback). After that, rotation genuinely is one
+`secrets-store secret update`. Worth doing before the next rotation rather than
+after.
+
+#### The rotation itself
 
 1. `npx wrangler secret put API_TOKEN --name florence-crm-api`
 2. `npx wrangler secrets-store secret update 80c48360a0e54dd69425da2dfbde21ad`
    (secret `CRM_API_TOKEN`) — same value
-3. Confirm tiles still populate, and the **old** token now returns 401
+3. Same value into dashboard-proxy, lead-capture, and outreach (or delete
+   dashboard-proxy first per C5, which removes one)
+4. Confirm tiles populate, lead capture still posts, and the **old** token now
+   returns 401
 
-Doing this also resolves the A1 unknown: after it, the worker secret and the
-Secrets Store copy provably match, because you set both.
+Note the Secrets Store copy was last modified **2026-07-03**, which is the only
+signal available on its vintage — values are not readable. Doing this rotation
+resolves the A1 unknown outright, because you set both sides yourself.
 
 No redeploy needed — the worker reads Secrets Store per request. And with Netlify
 gone there's no third copy to drift out of sync, which is what let the
