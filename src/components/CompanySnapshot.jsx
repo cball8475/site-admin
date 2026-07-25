@@ -355,25 +355,36 @@ export default function CompanySnapshot() {
   // ─── Action Items (corrective action tracking) ────────────────────────────
   useEffect(() => { fetchActions(); }, []);
 
+  // Action mutation failures surface in errors.actions — a click that fails
+  // must not look identical to a click that worked.
   async function fetchActions() {
     try {
       const data = await fetchJson('/actions?status=open');
       setActionItems(data.actions || []);
-    } catch { /* non-critical */ }
+      setErrors(prev => { const rest = { ...prev }; delete rest.actions; return rest; });
+    } catch (e) {
+      setErrors(prev => ({ ...prev, actions: `load failed — ${e.message}` }));
+    }
   }
 
   async function completeAction(id) {
     try {
       await fetchJson(`/actions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed' }) });
       setActionItems(prev => prev.filter(a => a.id !== id));
-    } catch { /* silent */ }
+      setErrors(prev => { const rest = { ...prev }; delete rest.actions; return rest; });
+    } catch (e) {
+      setErrors(prev => ({ ...prev, actions: `complete failed — ${e.message}` }));
+    }
   }
 
   async function dismissAction(id) {
     try {
       await fetchJson(`/actions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'dismissed' }) });
       setActionItems(prev => prev.filter(a => a.id !== id));
-    } catch { /* silent */ }
+      setErrors(prev => { const rest = { ...prev }; delete rest.actions; return rest; });
+    } catch (e) {
+      setErrors(prev => ({ ...prev, actions: `dismiss failed — ${e.message}` }));
+    }
   }
 
   async function syncAction(section, text) {
@@ -382,7 +393,9 @@ export default function CompanySnapshot() {
       if (!res.deduplicated && res.action_id) {
         setActionItems(prev => [...prev, { id: res.action_id, section, action_text: text, status: 'open' }]);
       }
-    } catch { /* silent */ }
+    } catch (e) {
+      setErrors(prev => ({ ...prev, actions: `sync failed — ${e.message}` }));
+    }
   }
 
   function actionsFor(section) {
@@ -516,6 +529,7 @@ export default function CompanySnapshot() {
 
       {errors.stats && <div style={{ marginTop: 10 }}><ErrorBanner section="Stats" error={errors.stats} /></div>}
       {errors.leadsAnalytics && <div style={{ marginTop: 10 }}><ErrorBanner section="Lead analytics" error={errors.leadsAnalytics} /></div>}
+      {errors.actions && <div style={{ marginTop: 10 }}><ErrorBanner section="Action items" error={errors.actions} /></div>}
 
       {/* ── Operator Status ────────────────────────────────────────────── */}
       <Section title="Operator Status">

@@ -61,6 +61,23 @@ async function embed(env, input) {
 }
 
 async function reindex(env) {
+  // Pre-flight: verify every corpus table exists BEFORE upserting anything.
+  // Failing midway used to leave the index partially updated with no signal;
+  // failing up front is atomic-ish and names the actual problem.
+  const missing = [];
+  for (const entry of CORPUS) {
+    const t = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
+    ).bind(entry.table).first();
+    if (!t) missing.push(entry.table);
+  }
+  if (missing.length) {
+    throw new Error(
+      `reindex aborted — corpus table(s) missing from D1: ${missing.join(", ")}. ` +
+      "Remove the entry from CORPUS if the table was retired."
+    );
+  }
+
   const corpus = [];
   for (const entry of CORPUS) {
     const sql = `SELECT * FROM "${entry.table}"` + (entry.where ? ` WHERE ${entry.where}` : "");
@@ -92,36 +109,53 @@ async function search(env, q, topK) {
   const [qv] = await embed(env, q);
   const res = await env.VEC.query(qv, { topK, returnMetadata: "all" });
   const matches = [];
+  const stale = []; // vector ids whose D1 row is gone or superseded
   for (const m of res.matches || []) {
     const md = m.metadata || {};
     const entry = CORPUS_BY_TABLE[md.table];
-    let snippet = "";
-    if (entry && md.row_id != null) {
-      const row = await env.DB.prepare(`SELECT * FROM "${md.table}" WHERE id = ?`).bind(md.row_id).first();
-      if (row) snippet = entry.text(row);
+    // Reindex only ever upserts, so a row deleted or superseded in D1 lives on
+    // in the index. Never serve those as live hits — drop them from results
+    // and queue the vector for deletion so the index self-heals.
+    if (!entry || md.row_id == null) {
+      stale.push(m.id);
+      continue;
+    }
+    const row = await env.DB.prepare(`SELECT * FROM "${md.table}" WHERE id = ?`).bind(md.row_id).first();
+    if (!row || ("superseded_by" in row && row.superseded_by != null)) {
+      stale.push(m.id);
+      continue;
     }
     matches.push({
       score: Math.round((m.score || 0) * 1000) / 1000,
       table: md.table,
       title: md.title,
-      snippet: snippet.slice(0, 500),
+      snippet: entry.text(row).slice(0, 500),
       id: m.id,
     });
   }
-  return { query: q, matches };
+  return { query: q, matches, stale };
 }
 
 function authorized(request, env) {
-  if (!env.API_TOKEN) return true; // no token set -> open; set one to lock down
+  // Fail closed: this index serves people_intel — candid notes on named
+  // coworkers. An unset token must mean locked, never public. The deploy
+  // workflow refuses to deploy without KB_API_TOKEN set.
+  if (!env.API_TOKEN) return false;
   return (request.headers.get("Authorization") || "") === `Bearer ${env.API_TOKEN}`;
 }
 
 export default {
+  // reindex() throws on failure, and an unhandled rejection inside waitUntil
+  // marks the invocation failed in Cloudflare — a cron that swallows its own
+  // errors reports success forever (see EATON worker-api.mjs v3.9.3).
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(reindex(env).then((r) => console.log("kb-search reindex:", JSON.stringify(r))));
+    ctx.waitUntil((async () => {
+      const r = await reindex(env);
+      console.log("kb-search reindex:", JSON.stringify(r));
+    })());
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
 
@@ -143,7 +177,14 @@ export default {
       const q = url.searchParams.get("q");
       if (!q) return json({ error: "q required" }, 400);
       const k = Math.min(parseInt(url.searchParams.get("k") || "5", 10), 20);
-      return json(await search(env, q, k));
+      const result = await search(env, q, k);
+      if (result.stale.length) {
+        console.log("kb-search: purging stale vectors:", result.stale.join(", "));
+        ctx.waitUntil(env.VEC.deleteByIds(result.stale).catch((e) =>
+          console.error("kb-search: stale vector purge failed:", e.message || e)));
+      }
+      const { stale, ...body } = result;
+      return json({ ...body, stale_purged: stale.length });
     }
 
     return json({ error: "not found" }, 404);

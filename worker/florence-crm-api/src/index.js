@@ -1113,13 +1113,24 @@ async function handleSeoSnapshot(env) {
           dimensionFilterGroups: [{ filters: [{ dimension: "query", operator: "equals", expression: fix2.query }] }]
         })
       }).then(function(r) {
-        return r.ok ? r.json() : { rows: [] };
-      }).catch(function() {
-        return { rows: [] };
+        // A failed per-keyword query must stay distinguishable from "queried,
+        // no data" — folding a 429/500 into {rows:[]} writes a fake
+        // zero-impression datapoint into seo_fix_snapshots that reads as a
+        // ranking collapse.
+        return r.ok ? r.json() : { query_failed: "GSC " + r.status };
+      }).catch(function(e) {
+        return { query_failed: String(e && e.message || e) };
       });
     }));
+    var queryErrors = [];
     for (var i = 0; i < fixes.length; i++) {
       var fix = fixes[i];
+      if (filtered[i].query_failed) {
+        // Skip the snapshot insert entirely for this keyword — no datapoint
+        // beats a false zero. Recorded in the cron log below.
+        queryErrors.push(fix.query + " (" + filtered[i].query_failed + ")");
+        continue;
+      }
       var fRow = (filtered[i].rows || [])[0];
       var match = fRow && fRow.impressions > 0 ? { position: fRow.position, impressions: fRow.impressions, clicks: fRow.clicks } : null;
       if (!match) {
@@ -1150,10 +1161,22 @@ async function handleSeoSnapshot(env) {
     if (missed.length > 0) {
       log.fixes_missed = JSON.stringify(missed);
     }
+    // Per-keyword query failures degrade the snapshot but must not pass as a
+    // clean success: status "partial" + the failing keywords in error_message.
+    var finalStatus = queryErrors.length > 0 ? "partial" : "success";
+    var finalError = queryErrors.length > 0
+      ? queryErrors.length + " keyword query(ies) failed, snapshot skipped for those: " + queryErrors.join("; ")
+      : null;
+    log.status = finalStatus;
+    log.error_message = finalError;
     await db.prepare(
       "INSERT INTO seo_cron_log (job, status, fixes_total, fixes_matched, fixes_missed, error_message) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(log.job, "success", log.fixes_total, log.fixes_matched, log.fixes_missed, null).run();
-    console.log("SEO snapshot OK: " + log.fixes_matched + "/" + log.fixes_total + " matched");
+    ).bind(log.job, finalStatus, log.fixes_total, log.fixes_matched, log.fixes_missed, finalError).run();
+    if (queryErrors.length > 0) {
+      console.error("SEO snapshot PARTIAL: " + log.fixes_matched + "/" + log.fixes_total + " matched; " + finalError);
+    } else {
+      console.log("SEO snapshot OK: " + log.fixes_matched + "/" + log.fixes_total + " matched");
+    }
     return log;
   } catch (e) {
     log.status = "error";
@@ -2113,7 +2136,16 @@ var worker_default = {
   },
   async scheduled(event, env, ctx) {
     console.log("Cron triggered:", event.cron, "at", (/* @__PURE__ */ new Date()).toISOString());
-    ctx.waitUntil(handleSeoSnapshot(env));
+    // handleSeoSnapshot returns {status:"error"} instead of throwing, and a
+    // waitUntil promise that resolves marks the cron invocation SUCCESSFUL in
+    // Cloudflare no matter what actually happened. Re-throw non-success so a
+    // broken snapshot shows up as a failed invocation instead of a green one
+    // (same fix as EATON worker-api.mjs v3.9.3).
+    ctx.waitUntil(handleSeoSnapshot(env).then(function(r) {
+      if (r && r.status === "error") {
+        throw new Error("seo-position-snapshot FAILED: " + (r.error_message || "unknown"));
+      }
+    }));
   }
 };
 var ENFORCE_MERCURY_SIG = false;

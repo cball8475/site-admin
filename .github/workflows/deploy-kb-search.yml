@@ -33,5 +33,9 @@ jobs:
           if [ -n "$KB_API_TOKEN" ]; then
             printf '%s' "$KB_API_TOKEN" | npx wrangler secret put API_TOKEN
           else
-            echo "KB_API_TOKEN not set — /reindex and /search stay open until it is added"
+            # The worker fails closed without API_TOKEN (all HTTP endpoints 401).
+            # This index serves people_intel — it must never deploy half-configured
+            # with only a green checkmark to show for it. Fail the deploy.
+            echo "::error::KB_API_TOKEN repo secret is not set. /reindex and /search require it (auth fails closed). Add the secret and re-run."
+            exit 1
           fi

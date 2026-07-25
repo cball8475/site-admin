@@ -36,5 +36,7 @@ jobs:
           if [ -n "$RESEND_API_KEY" ]; then
             printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
           else
-            echo "RESEND_API_KEY repo secret not set — skipping (email lead alerts stay off until it is added)"
+            # Feature toggle, not auth — deploy proceeds, but as a visible
+            # annotation on the run, not a log line nobody reads.
+            echo "::warning::RESEND_API_KEY repo secret not set — email lead alerts are OFF for this deploy. Add the secret and re-run to enable them."
           fi

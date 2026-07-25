@@ -64,11 +64,14 @@ export default {
       ).bind(from).first();
 
       if (prospect) {
-        // Dedup on message-id so retries don't double-log
+        // Dedup on message-id so retries don't double-log. Exact match via
+        // json_extract — a LIKE '%id%' probe treats % and _ in an inbound
+        // Message-ID as wildcards, which can match an unrelated row and
+        // silently skip the halt.
         if (msgId) {
           const dup = await env.DB.prepare(
-            "SELECT id FROM outreach_log WHERE event = 'reply_received' AND detail LIKE ? LIMIT 1"
-          ).bind(`%${msgId}%`).first();
+            "SELECT id FROM outreach_log WHERE event = 'reply_received' AND json_extract(detail, '$.message_id') = ? LIMIT 1"
+          ).bind(msgId).first();
           if (dup) { await message.forward(forwardTo); return; }
         }
 
@@ -83,27 +86,31 @@ export default {
         }
 
         const halted = !!prospect.sequence;
-        await env.DB.prepare(
-          "INSERT INTO activities (prospect_id, type, note) VALUES (?, 'reply', ?)"
-        ).bind(prospect.id,
-          `Inbound reply — "${subject}"` + (halted ? " [sequence auto-halted]" : "") + `\n\n${excerpt}`
-        ).run();
-
-        await env.DB.prepare(
-          "UPDATE prospects SET sequence = NULL, sequence_started = NULL, last_contact = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-        ).bind(prospect.id).run();
-
-        await env.DB.prepare(
-          "INSERT INTO suppression (email, reason, prospect_id) VALUES (?, 'replied_auto', ?) " +
-          "ON CONFLICT(email) DO UPDATE SET reason = CASE WHEN suppression.reason LIKE 'replied%' THEN suppression.reason ELSE 'replied_auto' END"
-        ).bind(from, prospect.id).run();
-
-        await env.DB.prepare(
-          "INSERT INTO outreach_log (source, event, prospect_id, name, email, detail) VALUES ('email-reply-ingest', 'reply_received', ?, ?, ?, ?)"
-        ).bind(prospect.id, prospect.short_name || prospect.name, from, JSON.stringify({
-          subject, message_id: msgId, sequence_halted: halted,
-          was_step: prospect.sequence_step ?? null, excerpt_chars: excerpt.length
-        })).run();
+        // All four writes in one batch: D1 runs a batch as a transaction, so
+        // the halt, suppression, and audit rows land together or not at all.
+        // The old sequential awaits could log the reply, then die before
+        // halting the sequence — a logged reply with a still-running sequence
+        // is the exact SOMO Trash incident this worker exists to prevent.
+        await env.DB.batch([
+          env.DB.prepare(
+            "INSERT INTO activities (prospect_id, type, note) VALUES (?, 'reply', ?)"
+          ).bind(prospect.id,
+            `Inbound reply — "${subject}"` + (halted ? " [sequence auto-halted]" : "") + `\n\n${excerpt}`
+          ),
+          env.DB.prepare(
+            "UPDATE prospects SET sequence = NULL, sequence_started = NULL, last_contact = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+          ).bind(prospect.id),
+          env.DB.prepare(
+            "INSERT INTO suppression (email, reason, prospect_id) VALUES (?, 'replied_auto', ?) " +
+            "ON CONFLICT(email) DO UPDATE SET reason = CASE WHEN suppression.reason LIKE 'replied%' THEN suppression.reason ELSE 'replied_auto' END"
+          ).bind(from, prospect.id),
+          env.DB.prepare(
+            "INSERT INTO outreach_log (source, event, prospect_id, name, email, detail) VALUES ('email-reply-ingest', 'reply_received', ?, ?, ?, ?)"
+          ).bind(prospect.id, prospect.short_name || prospect.name, from, JSON.stringify({
+            subject, message_id: msgId, sequence_halted: halted,
+            was_step: prospect.sequence_step ?? null, excerpt_chars: excerpt.length
+          })),
+        ]);
       } else {
         // Unknown sender — log lightly so reply coverage is auditable
         await env.DB.prepare(
@@ -111,8 +118,23 @@ export default {
         ).bind(from, JSON.stringify({ subject, to: message.to || null })).run();
       }
     } catch (e) {
-      // Never let ingestion failures block mail delivery
-      console.error("email-reply-ingest error:", e.message || e);
+      // Never let ingestion failures block mail delivery — but never let them
+      // vanish either. The failure mode here looks IDENTICAL to success from
+      // the inbox (the mail still forwards) while the sequence keeps sending.
+      // So: write a durable ingest_error marker (best effort — D1 itself may
+      // be the thing that's down) and log loudly for Workers observability.
+      console.error(`email-reply-ingest FAILED for ${from} ("${subject}"):`, e.message || e,
+        "— prospect writes were NOT committed; if this sender is a prospect their sequence was NOT halted");
+      try {
+        await env.DB.prepare(
+          "INSERT INTO outreach_log (source, event, email, detail) VALUES ('email-reply-ingest', 'ingest_error', ?, ?)"
+        ).bind(from, JSON.stringify({
+          subject, message_id: msgId, error: String(e.message || e),
+          note: "sequence halt/suppression NOT applied — investigate and halt manually if prospect",
+        })).run();
+      } catch (logErr) {
+        console.error("email-reply-ingest DOUBLE FAULT — could not write ingest_error to D1:", logErr.message || logErr);
+      }
     }
 
     await message.forward(forwardTo);

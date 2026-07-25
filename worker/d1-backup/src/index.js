@@ -109,20 +109,45 @@ async function runBackup(env) {
   const backups = [];
   const prunes = [];
   for (const src of SOURCES) {
-    backups.push(await backupSource(env, src, stamp));
-    prunes.push(await pruneSource(env, src, retention));
+    const b = await backupSource(env, src, stamp);
+    backups.push(b);
+    // Only prune a source whose backup just succeeded. Pruning after a failed
+    // backup is how N consecutive silent failures would delete every snapshot
+    // you have while the cron history stayed green.
+    if (b.ok) {
+      try {
+        prunes.push(await pruneSource(env, src, retention));
+      } catch (e) {
+        prunes.push({ db: src.name, pruned: 0, error: String((e && e.message) || e) });
+      }
+    } else {
+      prunes.push({ db: src.name, pruned: 0, skipped: "backup failed" });
+    }
   }
-  return { stamp, backups, prunes };
+  return { stamp, backups, prunes, ok: backups.every((b) => b.ok) };
 }
 
 function authorized(request, env) {
-  if (!env.API_TOKEN) return true; // no token set -> open; set one to lock down
+  // Fail closed: no API_TOKEN configured means nobody gets in, not everybody.
+  // The deploy workflow refuses to deploy without BACKUP_API_TOKEN set.
+  if (!env.API_TOKEN) return false;
   return (request.headers.get("Authorization") || "") === `Bearer ${env.API_TOKEN}`;
 }
 
 export default {
+  // Cloudflare only marks a cron invocation failed when the waitUntil promise
+  // REJECTS. A routine that returns {ok:false} into a fire-and-forget promise
+  // reports success forever (this exact bug hid the EATON weekly digest outage
+  // for a month — see EATON worker-api.mjs v3.9.3). So: throw on any failure.
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runBackup(env).then((r) => console.log("d1-backup:", JSON.stringify(r))));
+    ctx.waitUntil((async () => {
+      const r = await runBackup(env);
+      console.log("d1-backup:", JSON.stringify(r));
+      if (!r.ok) {
+        const failed = r.backups.filter((b) => !b.ok).map((b) => `${b.db}: ${b.error}`);
+        throw new Error(`d1-backup FAILED for ${failed.length} database(s) — ${failed.join("; ")}`);
+      }
+    })());
   },
 
   async fetch(request, env) {
@@ -140,7 +165,10 @@ export default {
 
     if (url.pathname === "/backup" && request.method === "POST") {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
-      return json(await runBackup(env));
+      const r = await runBackup(env);
+      // A partial backup is a failure at the HTTP layer too — callers checking
+      // only the status code must not mistake it for success.
+      return json(r, r.ok ? 200 : 500);
     }
 
     if (url.pathname === "/backups" && request.method === "GET") {

@@ -34,5 +34,9 @@ jobs:
           if [ -n "$BACKUP_API_TOKEN" ]; then
             printf '%s' "$BACKUP_API_TOKEN" | npx wrangler secret put API_TOKEN
           else
-            echo "BACKUP_API_TOKEN not set — manual endpoints stay open until it is added"
+            # The worker fails closed without API_TOKEN (all HTTP endpoints 401),
+            # and a deploy that silently ships a half-configured worker is how
+            # that state persists unnoticed. Fail the deploy instead.
+            echo "::error::BACKUP_API_TOKEN repo secret is not set. The worker's manual /backup and /backups endpoints require it (auth fails closed). Add the secret and re-run."
+            exit 1
           fi

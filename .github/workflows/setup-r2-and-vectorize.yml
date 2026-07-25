@@ -19,7 +19,24 @@ jobs:
     steps:
       - name: Install wrangler
         run: npm i -g wrangler
+      # "|| echo" would mask the difference between "already exists" (fine) and
+      # "R2 was never enabled" (every nightly backup fails from day one). Only
+      # the already-exists case is allowed to pass.
       - name: Create R2 bucket d1-backups (idempotent)
-        run: wrangler r2 bucket create d1-backups || echo "bucket exists, or R2 is not enabled yet (enable it in the dashboard)"
+        run: |
+          set +e
+          out=$(wrangler r2 bucket create d1-backups 2>&1); rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ] && ! echo "$out" | grep -qi "already exists"; then
+            echo "::error::R2 bucket create failed for a reason other than 'already exists' — likely R2 is not enabled on the account. d1-backup CANNOT write snapshots until this is fixed."
+            exit 1
+          fi
       - name: Create Vectorize index eaton-kb (idempotent)
-        run: wrangler vectorize create eaton-kb --dimensions=768 --metric=cosine || echo "index already exists"
+        run: |
+          set +e
+          out=$(wrangler vectorize create eaton-kb --dimensions=768 --metric=cosine 2>&1); rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ] && ! echo "$out" | grep -qi "already exists"; then
+            echo "::error::Vectorize index create failed for a reason other than 'already exists'."
+            exit 1
+          fi

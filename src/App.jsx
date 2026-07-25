@@ -884,13 +884,24 @@ function BuyerCRM({flash}) {
     try {
       const { prospects: all } = await crm("/prospects");
       const normalized = all.map(normalizeProspect);
-      // Fetch activities for each prospect
+      // Fetch activities for each prospect. Individual failures degrade that
+      // prospect to an empty history — count them and say so, because a
+      // prospect silently rendered with no activities looks identical to a
+      // prospect that truly has none.
+      let activityFailures = 0;
       const withActivities = await Promise.all(normalized.map(async (p) => {
         try {
           const { activities } = await crm(`/prospects/${encodeURIComponent(p.place_id)}/activities`);
           return { ...p, activities: activities || [] };
-        } catch { return { ...p, activities: [] }; }
+        } catch (e) {
+          activityFailures++;
+          console.warn(`activities fetch failed for ${p.place_id}:`, e.message);
+          return { ...p, activities: [], activitiesLoadFailed: true };
+        }
       }));
+      if (activityFailures > 0) {
+        flash(`⚠️ Activity history failed to load for ${activityFailures} prospect(s) — shown without history`, "error");
+      }
       setProspects(withActivities);
       setSearched(true);
       // Pipeline = non-discovery prospects
