@@ -9,12 +9,58 @@ locations only.
 
 **Kickoff prompt for the audit session:**
 > Open site-admin/docs/credential-audit.md and run the credential audit. Go
-> table by table. For each row: verify the credential exists in its stated
-> location (probe endpoints, run `wrangler secret list`, check dashboard with
-> me), ask me for any value that is missing, tell me exactly where to put it,
-> and mark the row's status. Also load the fsc-credentials skill and reconcile
-> its registry against this list — anything in one but not the other gets
-> flagged. Do not print secret values in chat.
+> table by table. For each row: (1) verify the credential exists in its stated
+> location, (2) run its Safe Functional Test from section 0 so we prove it
+> WORKS, not just that it exists, (3) ask me for any value that is missing or
+> failing, tell me exactly where to put it, and mark the row's status. Obey
+> the Rules of Engagement in section 0 absolutely — no test that sends email
+> or SMS, touches the outreach engine, or triggers a cron. Also load the
+> fsc-credentials skill and reconcile its registry against this list — anything
+> in one but not the other gets flagged. Do not print secret values in chat.
+
+---
+
+## 0. Rules of engagement + safe functional tests
+
+**The audit is read-only by design. It must not change production state.**
+
+FORBIDDEN during the audit — no exceptions, even "just to test":
+- `POST /digest/send` (sends a real email — use `GET /digest/preview` instead)
+- Any Twilio send (verify in the Twilio console logs, read-only)
+- Manually triggering ANY cron (advances real sequences/snapshots)
+- Anything touching the outreach engine or its pause toggle
+  (`data_store: outreach_toggle` — it fails safe to paused; leave it)
+- `PUT`/`PATCH`/`DELETE` against any CRM or EATON endpoint
+
+Allowed writes, explicitly: `POST /backup` on d1-backup (writes today's dated
+snapshot — idempotent, harmless) — and even that is optional, since
+`GET /backups` proves the same credential read-only.
+
+**Safe functional test per credential** — each proves the credential *works*
+by exercising a real function, without side effects:
+
+| Credential | Safe functional test |
+|---|---|
+| florence-crm-api API_TOKEN | `GET /prospects` with bearer → 200; without → 401 |
+| GOOGLE_ADS_* (all four) | `GET /ads/metrics?days=7` → 200 with data (exercises OAuth refresh + Ads read) |
+| GOOGLE_* for GSC | `GET /seo/metrics?days=7` → 200 (exercises token refresh + GSC read) |
+| RESEND_API_KEY (crm) | Indirect only: Resend dashboard → recent activity; a send-test is forbidden |
+| TWILIO_SID/AUTH_TOKEN | Twilio console → message logs load (read-only); no test send |
+| MERCURY_WEBHOOK_SECRET | Mercury dashboard → webhook config shows endpoint + secret set; cannot probe inbound |
+| d1-backup API_TOKEN | `GET /backups` with bearer → 200 + today's objects listed; without → 401 |
+| kb-search API_TOKEN | `GET /search?q=test` with bearer → 200 with matches; without → 401 |
+| email-reply-ingest | Read-only: check `outreach_log` for recent `reply_received`/`inbound_nonprospect` rows via CRM API |
+| eaton AUTH_TOKEN / API_TOKEN | `GET /stats` with bearer → 200; without → 401 |
+| eaton ANTHROPIC_API_KEY | `POST /otter/extract` with a 2-line dummy transcript → 200 with tasks JSON (calls Anthropic, writes nothing) |
+| eaton RESEND_API_KEY | `GET /digest/preview` (builds, doesn't send) + last Friday cron invocation green in CF dashboard |
+| eaton GITHUB_BACKUP_TOKEN | Latest `infra/backups/auto/d1-export-*.json.gz` in the EATON repo is ≤7 days old + PAT expiry date in GitHub settings |
+| CLOUDFLARE_API_TOKEN (both repos) | Verify scopes in CF dashboard (read-only); token already proven by the 2026-07-25 deploys |
+| MEMBER_PASSWORD | Open lwvnewportcounty.org/members.html in a browser, enter the password → portal decrypts |
+| VITE_* (Netlify) | Load the site-admin dashboard → data populates (read-only GETs through the baked-in creds) |
+
+Any credential whose only true functional test has side effects (Resend send,
+Mercury inbound) is verified indirectly as above and marked "indirect" in the
+audit log — never force-tested.
 
 ---
 
