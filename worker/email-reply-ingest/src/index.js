@@ -137,6 +137,34 @@ export default {
       }
     }
 
-    await message.forward(forwardTo);
+    // The forward is the one step with no durable record, and it is the step
+    // everything else depends on: ingestion can succeed, log a tidy
+    // inbound_nonprospect row, and still deliver nothing to a human if this
+    // throws. That is how Cloudflare Access login codes went missing on
+    // 2026-07-25 while the log looked perfectly healthy.
+    //
+    // Rethrow after logging: a rejected message at least surfaces as a delivery
+    // failure to the sender, whereas swallowing it drops mail silently. The
+    // point of this block is that the failure is no longer invisible.
+    try {
+      await message.forward(forwardTo);
+    } catch (e) {
+      console.error(`email-reply-ingest FORWARD FAILED to ${forwardTo} for ${from} ("${subject}"):`,
+        e.message || e,
+        "— the message was ingested but NOT delivered to a human inbox. Check that the destination is still a verified Email Routing address.");
+      try {
+        await env.DB.prepare(
+          "INSERT INTO outreach_log (source, event, email, detail) VALUES ('email-reply-ingest', 'forward_error', ?, ?)"
+        ).bind(from, JSON.stringify({
+          subject, message_id: msgId, forward_to: forwardTo,
+          error: String(e.message || e),
+          note: "ingested but NOT forwarded — nothing reached the inbox for this message",
+        })).run();
+      } catch (logErr) {
+        console.error("email-reply-ingest DOUBLE FAULT — could not write forward_error to D1:",
+          logErr.message || logErr);
+      }
+      throw e;
+    }
   }
 };
