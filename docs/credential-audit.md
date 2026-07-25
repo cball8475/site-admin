@@ -1,11 +1,20 @@
 # FSC / EATON Credential Audit Playbook
 
-**Why this exists:** ending the guessing. This is the complete inventory of every
-secret, token, and key the infrastructure references — extracted from the actual
-source of all five repos on 2026-07-25, not from memory. A dedicated session
-walks this list top to bottom, verifies each entry exists where it should, and
-records the result. No value is ever written into this file — names and
-locations only.
+**Why this exists:** ending the guessing. No value is ever written into this file
+— names and locations only. A dedicated session walks this list top to bottom,
+verifies each entry exists where it should, and records the result.
+
+> **Correction (2026-07-25).** This file originally called itself "the complete
+> inventory… extracted from the actual source of all five repos." It was not
+> complete: it covered **5 of the account's 16 Cloudflare Workers**. A live sweep
+> of all 16 (`GET /workers/scripts/{name}/settings`) surfaced undocumented
+> credentials the repo-only view could never see — a second email provider
+> (**Brevo**, in florence-lead-followup), two extra Anthropic keys, two more
+> GitHub PATs (four total), and the full secret sets of the source-less workers
+> (florence-auto-outreach-emails, florence-lead-capture, florence-dashboard-proxy).
+> The complete per-worker inventory now lives in the fsc-credentials skill
+> registry (§1, "Full account sweep"). Lesson: a repo-derived inventory is not an
+> account inventory — anything deployed without committed source is invisible to it.
 
 **Kickoff prompt for the audit session:**
 > Open site-admin/docs/credential-audit.md and run the credential audit. Go
@@ -270,15 +279,28 @@ holds a working Resend key (independently confirmed by `outreach_log.email_sent`
 stale. Decide which path owns owner-alert email and delete the other, rather than
 setting a second key.
 
-### Finding 4 — this inventory is not complete
+### Finding 4 — inventory was incomplete; now swept (RESOLVED)
 
-The Cloudflare account holds **16** workers; this document covers 5 and describes itself
-as complete. Undocumented: `florence-outreach`, `florence-auto-outreach-emails` (the
-`MAILER` target — demonstrably holds a Resend key), `florence-lead-capture`,
-`florence-lead-followup`, `florence-utm-inject`, `florence-dashboard-proxy`,
-`ball-family-api`, `ball-family-ingest`, `fsc-api-canary`, `deal-or-no-deal`,
-`tiny-mountain-65c7`. Several send email or accept webhooks, so several hold secrets.
-`florence-auto-outreach-emails` has no source in any of the five repos.
+The document covered 5 of the account's **16** workers while calling itself complete.
+All 16 have since been swept (secret names via `/workers/scripts/{name}/settings`);
+the full table is in the fsc-credentials registry §1. The 11 previously-undocumented
+workers held real, unrecorded credentials:
+
+- **Brevo** (`florence-lead-followup.BREVO_API_KEY`) — a second live email provider the
+  stack was believed not to use.
+- Two extra **Anthropic keys** (`deal-or-no-deal`, `florence-outreach`).
+- **Four GitHub PATs** total (crm-api, lead-capture, eaton-backup, tiny-mountain).
+- `florence-auto-outreach-emails` — 6 secrets incl. its own `CRM_API_TOKEN` + `RESEND_API_KEY`.
+- `florence-lead-capture` — its own `CRM_API_TOKEN`, `GITHUB_TOKEN`, full Twilio set.
+- `florence-outreach` holds only an Anthropic key — **not** a CRM-bearer consumer
+  (resolves the rotation-table unknown).
+- `fsc-api-canary` already reads `CRM_API_TOKEN` from **Secrets Store** — the working
+  migration precedent.
+
+The CRM bearer exists in **four** plain worker secrets (crm-api `API_TOKEN`,
+dashboard-proxy, lead-capture, auto-outreach-emails) plus Secrets Store plus Netlify.
+Only crm-api has committed source, so "rotate here once" cannot be made true by code
+for the other three without editing deployed bundles — see the rotation runbook.
 
 ### Finding 5 — method note: existence checks were unavailable
 
