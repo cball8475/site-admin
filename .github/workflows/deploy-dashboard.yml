@@ -38,6 +38,11 @@ jobs:
 
       - run: npm ci
 
+      # Fail-closed regression test for the Access gate. Runs before deploy so a
+      # change that weakens enforcement never reaches production.
+      - name: Test Access enforcement
+        run: npm run test:access
+
       # The dashboard must never be built with a CRM bearer in the environment.
       # Vite inlines VITE_* vars into the public bundle, which is exactly how the
       # token leaked before. Fail the build rather than publish it again.
@@ -73,17 +78,45 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      # The worker is useless without the Secrets Store secret, and a missing
-      # one fails at request time with a 503 rather than at deploy. Surface it
-      # here instead of leaving it to be discovered in the browser.
-      - name: Post-deploy smoke test
+      # Prove the gate is CLOSED. An unauthenticated request must never be served
+      # the dashboard or reach the CRM proxy, so anything other than a refusal is
+      # a deploy failure — not a warning. This is what keeps "Access, period"
+      # true on every future deploy rather than only on the day it was set up.
+      - name: Assert Cloudflare Access is enforcing
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-            https://dashboard.florencescservices.com/api/health || echo "000")
-          case "$code" in
-            200) echo "Proxy healthy — /api/health returned 200." ;;
-            503) echo "::error::Proxy deployed but the CRM bearer is unavailable (503). Create the CRM_API_TOKEN secret in Secrets Store and confirm the API token has Secrets Store (read) scope." ; exit 1 ;;
-            401|403) echo "::warning::/api/health returned $code — expected if Cloudflare Access is enforcing on this hostname. Verify manually in a browser." ;;
-            000) echo "::warning::Could not reach dashboard.florencescservices.com — DNS may still be propagating on first deploy." ;;
-            *) echo "::warning::/api/health returned $code — check the worker logs." ;;
+          host=https://dashboard.florencescservices.com
+          fail=0
+
+          # /__health is the one intentionally public route: config sanity only,
+          # no upstream call, no secret value.
+          health=$(curl -s --max-time 30 "$host/__health" || echo '{}')
+          echo "health: $health"
+          case "$health" in
+            *'"access_configured":true'*) ;;
+            *) echo "::error::ACCESS_TEAM_DOMAIN / ACCESS_POLICY_AUD are not set on the worker — it is refusing all traffic. Fill them in wrangler.toml (see docs/dashboard-deploy.md) and redeploy." ; fail=1 ;;
           esac
+          case "$health" in
+            *'"crm_binding_present":true'*) ;;
+            *) echo "::error::CRM_API_TOKEN Secrets Store binding did not resolve. Create the secret and confirm the deploy token has Secrets Store (read) scope." ; fail=1 ;;
+          esac
+
+          # No Access JWT → both the SPA and the proxy must refuse.
+          for path in / /api/prospects; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$host$path" || echo "000")
+            case "$code" in
+              403|401) echo "OK: $path refused unauthenticated ($code)" ;;
+              302|303) echo "OK: $path redirected to Access login ($code)" ;;
+              000) echo "::warning::$path unreachable — DNS may still be propagating on a first deploy. Re-run to confirm." ;;
+              *) echo "::error::$path returned $code to an UNAUTHENTICATED request. The dashboard is exposed. Check that the Access policy covers this hostname and that workers_dev/preview_urls are disabled." ; fail=1 ;;
+            esac
+          done
+
+          # The workers.dev bypass hostname must not answer at all.
+          bypass=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://fsc-dashboard.cball8475.workers.dev/ || echo "000")
+          case "$bypass" in
+            000|404|530|1016) echo "OK: workers.dev bypass hostname does not serve ($bypass)" ;;
+            *) echo "::error::fsc-dashboard.cball8475.workers.dev answered $bypass — this hostname is NOT covered by the Access policy. Confirm workers_dev = false and preview_urls = false in wrangler.toml." ; fail=1 ;;
+          esac
+
+          exit $fail

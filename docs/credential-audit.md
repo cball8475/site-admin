@@ -230,7 +230,19 @@ half-built proxy.
 **Remediation built — see `docs/dashboard-deploy.md`.** Rather than a Netlify Edge
 Function, this is one Cloudflare Worker (`fsc-dashboard`) serving the SPA and
 proxying `/api/*` with the bearer read from Secrets Store — the same store that
-already holds `EATON_TOKEN`, and Cloudflare Access gates the hostname. Note the
+already holds `EATON_TOKEN`.
+
+Cloudflare Access is a hard requirement, not a phase: the worker verifies the
+Access JWT (signature, issuer, audience via `jose`) on **every** request except
+`/__health`, refuses everything if the Access vars are unset, and `workers_dev` +
+`preview_urls` are both disabled because those hostnames are not covered by the
+Access policy and would otherwise be unauthenticated doors into the CRM proxy.
+`npm run test:access` covers the fail-closed paths (including an `alg: none`
+forgery) and runs in CI before deploy; the workflow then asserts against the live
+hostname that unauthenticated requests are refused and the `workers.dev` name does
+not answer — a deploy that leaves the dashboard open fails.
+
+Note the
 client code was *already* written for this: `App.jsx` carried a comment saying the
 token stays server-side and calls go same-origin through a dashboard proxy, and
 `crmFetch` already omits the auth header when no token is present. The leak came
