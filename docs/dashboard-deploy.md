@@ -16,20 +16,35 @@ in the public JS bundle).
 
 ## Part A — Cloudflare
 
-### A1. Create the CRM bearer in Secrets Store
+### A1. CRM bearer in Secrets Store — already exists, nothing to create
 
-Same store that already holds `EATON_TOKEN`, so no new mechanism.
+Confirmed 2026-07-25: store `80c48360a0e54dd69425da2dfbde21ad` holds
+`CRM_API_TOKEN` (comment "Shared FSC CRM…") alongside `EATON_TOKEN`, 2/100 used.
+`wrangler.toml` already points at exactly that store and name, so the binding
+resolves with no change. **Skip to A2.**
 
-```bash
-npx wrangler secrets-store secret create 80c48360a0e54dd69425da2dfbde21ad \
-  --name CRM_API_TOKEN --scopes workers --remote
-```
+Two caveats, because the name existing does not mean the value is right:
 
-Paste the **current** florence-crm-api `API_TOKEN` when prompted. Don't rotate
-yet — get the new path working against a known-good value, then rotate in C3.
+- **Its vintage is unverified.** Secrets Store values can't be read back, so
+  there is no way to confirm it matches florence-crm-api's `API_TOKEN` short of
+  using it. This is now the *third* copy of the CRM bearer (worker secret,
+  Netlify var, Secrets Store) and one of the other copies — the one cached in the
+  fsc-credentials skill — had already gone stale without anyone noticing. Assume
+  nothing.
+- **"Shared" may mean something else already reads it.** If another worker binds
+  `CRM_API_TOKEN`, rotating in C3 will affect it too. Check Secrets Store → the
+  secret → its bindings before rotating, so a rotation doesn't break a caller
+  nobody remembered.
 
-Dashboard alternative: Cloudflare → Secrets Store → the store → Add secret, name
-`CRM_API_TOKEN`, scope Workers.
+**If tiles 401 after you log in, this is why** — the Secrets Store value doesn't
+match the worker's `API_TOKEN`. That is not a broken proxy; a 503 would mean the
+binding failed, a 401 means the bearer resolved but the CRM rejected it. Fix by
+doing C3 now instead of later: set both to the same new value.
+
+You can pre-empt it by doing C3 before B3 instead. The trade is that rotating
+immediately breaks the Netlify dashboard (it carries the old baked token), which
+costs you the rollback in C2. Fine if you're deleting Netlify anyway; otherwise
+proceed in order and treat a 401 as the known, cheap failure.
 
 ### A2. Add Secrets Store (read) to the deploy token
 
@@ -137,10 +152,15 @@ Keep it until C1 passes — it's the rollback.
 
 The old value was publicly downloadable. Treat it as known.
 
+Check the secret's bindings first (see A1) so you know what else is affected.
+
 1. `npx wrangler secret put API_TOKEN --name florence-crm-api`
 2. `npx wrangler secrets-store secret update 80c48360a0e54dd69425da2dfbde21ad`
    (secret `CRM_API_TOKEN`) — same value
 3. Confirm tiles still populate, and the **old** token now returns 401
+
+Doing this also resolves the A1 unknown: after it, the worker secret and the
+Secrets Store copy provably match, because you set both.
 
 No redeploy needed — the worker reads Secrets Store per request. And with Netlify
 gone there's no third copy to drift out of sync, which is what let the
