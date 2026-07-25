@@ -1,5 +1,18 @@
 # FSC / EATON Credential Audit Playbook
 
+> ⚠️ **THIS REPOSITORY IS PUBLIC** (verified 2026-07-25 — `private: false`).
+> Everything below is world-readable, including via git history. "No values, names
+> only" is not sufficient protection: an inventory of which secrets exist, which
+> are unset, and which guards are disabled is itself useful to an attacker.
+>
+> Current-state detail — which credentials are presently exposed, verified statuses,
+> per-worker secret inventory, and the rotation runbook — has been moved to the
+> **private** `cball8475/skills` repo, at
+> `skills/personal/fsc-credentials/references/`. Keep it there.
+>
+> This file is retained as the *method*: scope, rules of engagement, and safe tests.
+> Do not add live findings to it while the repo is public.
+
 **Why this exists:** ending the guessing. No value is ever written into this file
 — names and locations only. A dedicated session walks this list top to bottom,
 verifies each entry exists where it should, and records the result.
@@ -88,7 +101,7 @@ Verify with: `npx wrangler secret list --name <worker>` (names only, by design).
 | GOOGLE_ADS_DEVELOPER_TOKEN | Google Ads API | Ads metrics | ✅ same test (zero spend — confirm intentional) |
 | TWILIO_ACCOUNT_SID | SMS lead alerts | SMS alerts | ✅ `owner_alert` → `sms.sent:true` 07-24 |
 | TWILIO_AUTH_TOKEN | SMS lead alerts | SMS alerts | ✅ same test |
-| MERCURY_WEBHOOK_SECRET | Mercury webhook HMAC (note: ENFORCE_MERCURY_SIG is false in code — flag this during audit) | Webhook auth is advisory | ⚠️ ⏳ confirmed dead code (`index.js:2151`) — decide enforce or drop |
+| MERCURY_WEBHOOK_SECRET | Mercury webhook HMAC | Webhook auth is advisory | ⚠️ ⏳ enforcement decision pending — see private registry |
 | GITHUB_TOKEN | `/github-push` + `/github-inject-pixel` (503 without it) | Dashboard GitHub features | ⏳ **row added during audit — was missing from this table**; record PAT expiry |
 
 GSC also verified independently: `GET /seo/metrics?days=7` → 200 with real data
@@ -211,30 +224,14 @@ Store) · StatiCrypt password (member-facing — who else holds it?).
 
 ## Findings — 2026-07-25 audit
 
-### Finding 1 (critical) — the CRM bearer is published
+### Finding 1 (critical) — client-side credential exposure via VITE_ inlining
 
-`VITE_CRM_API_TOKEN` is inlined into the dashboard's public JS bundle at build time.
-The audit downloaded `https://site-admin-fsc.netlify.app` unauthenticated, extracted the
-bearer, and pulled 200s from `/prospects`, `/ads/metrics`, `/seo/metrics`, and
-`/gsc/metrics`. Anyone who loads the dashboard URL can read the CRM.
-
-Rotating alone does not fix it — the replacement is republished on the next build. The
-fix is two changes, in order:
-
-1. Move auth server-side: an `/api` proxy (Netlify Edge Function) reading an
-   **unprefixed** `CRM_API_TOKEN`, with all three call sites using relative `/api`.
-   `GoogleAdsTile.jsx:11-12` is already written against exactly this shape (in `PROD`
-   it uses `/api` with an empty token), but **no `netlify.toml` or `_redirects`
-   exists**, so `/api/*` currently returns Netlify's 404 page. The proxy was started and
-   never finished.
-2. Add access control in front of the dashboard. Netlify reports
-   `requiresPassword: false`, so step 1 alone converts the leak into an unauthenticated
-   public API over the same data. The site is on `nf_team_dev`, so built-in password
-   protection may need a plan change; a login check inside the Edge Function avoids that.
-
-Then rotate `API_TOKEN` + the Netlify var, since the present value is burned.
-Also retire `florence-dashboard-proxy` — it 404s on every path and is a second,
-half-built proxy.
+A `VITE_`-prefixed var was inlined into the dashboard's public bundle at build
+time, publishing a bearer that should have stayed server-side. Root cause: the
+client code already fell back to a same-origin `/api` path and omitted auth when
+no token was set, but setting the URL and token vars in Netlify overrode that.
+The lesson is general — **a `VITE_`-prefixed variable is a publishing decision,
+not a configuration one.** Exposure specifics and rotation state: private registry.
 
 **Remediation built — see `docs/dashboard-deploy.md`.** Rather than a Netlify Edge
 Function, this is one Cloudflare Worker (`fsc-dashboard`) serving the SPA and
@@ -334,7 +331,7 @@ Corrected in the skill:
 
 ### Still open (dashboard checks only Charlie can do)
 
-1. Mercury webhook secret set + decide whether to enforce `ENFORCE_MERCURY_SIG`
+1. Mercury webhook secret + signature-enforcement decision (detail: private registry)
 2. Scopes on both `CLOUDFLARE_API_TOKEN` copies
 3. Expiry dates for both GitHub PATs (crm `GITHUB_TOKEN`, eaton `GITHUB_BACKUP_TOKEN`)
 4. eaton `RESEND_API_KEY` — confirm via Resend recent-activity view

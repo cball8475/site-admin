@@ -48,13 +48,8 @@ proceed in order and treat a 401 as the known, cheap failure.
 
 ### A2. Deploy token needs Secrets Store (read) — the one open item
 
-Verified 2026-07-25: the account holds two tokens, **both named "CF Master
-Token"**, both active, both expiring 2027-05-24:
-
-| id | last used | note |
-|---|---|---|
-| `d2fbf2c3633f5c7951cae84b724cc62d` | 2026-07-25 | confirmed to have Secrets Store (read) + Workers |
-| `b3a2b3be40a7ac94f4c10cd09428c88b` | **never** | unused active credential — delete it |
+Token inventory and scope findings: see the private registry
+(`cball8475/skills` → `skills/personal/fsc-credentials/references/`).
 
 Whether the repo's `CLOUDFLARE_API_TOKEN` is either of these could not be
 determined: an account-owned token cannot enumerate user-owned tokens, so a third
@@ -94,9 +89,6 @@ allows. That address's deliverability is doubtful:
 - Email Routing on `florencescservices.com` delivers to the
   **email-reply-ingest worker**, which logs arrivals to D1 rather than to a
   mailbox — 104 `inbound_nonprospect` rows, most recent 2026-07-25 16:24.
-- Those rows include bounce senders whose VERP encodes
-  `charlie=florencescservices.com`, i.e. mail addressed to that mailbox has been
-  bouncing.
 
 If the code never arrives you cannot reach the dashboard. Not a hard lockout —
 you can edit the policy any time — but verify before assuming the cutover
@@ -177,9 +169,9 @@ as unreachable; re-run once DNS answers.
 
 ### C2. Delete the Netlify site — do not skip this
 
-While `site-admin-fsc.netlify.app` answers it serves the **old bundle with the
-embedded bearer**, and it sits outside Cloudflare's edge so Access cannot gate
-it. Everything above is decorative until it's gone.
+While the old Netlify origin answers it serves a superseded build and sits
+outside Cloudflare's edge, so Access cannot gate it. Everything above is
+decorative until it's gone.
 
 Netlify → site-admin-fsc → Site configuration → **delete the site**. At minimum,
 unlink the repo and delete the `VITE_*` environment variables so no future build
