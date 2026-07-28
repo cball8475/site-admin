@@ -89,41 +89,51 @@ jobs:
       # the dashboard or reach the CRM proxy, so anything other than a refusal is
       # a deploy failure — not a warning. This is what keeps "Access, period"
       # true on every future deploy rather than only on the day it was set up.
+      # Prove the gate is CLOSED. An unauthenticated request must never be served
+      # the dashboard or reach the CRM proxy, so anything other than a refusal is
+      # a deploy failure — not a warning. This is what keeps "Access, period"
+      # true on every future deploy rather than only on the day it was set up.
+      #
+      # Note: Access covers the WHOLE hostname, including /__health. That is
+      # correct — Access is mandatory — but it means no route is readable from
+      # CI, so this step asserts enforcement rather than reading config. Verify
+      # config in a browser after login, or with `wrangler tail fsc-dashboard`.
       - name: Assert Cloudflare Access is enforcing
         run: |
           host=https://dashboard.florencescservices.com
           fail=0
 
-          # /__health is the one intentionally public route: config sanity only,
-          # no upstream call, no secret value.
-          health=$(curl -s --max-time 30 "$host/__health" || echo '{}')
-          echo "health: $health"
-          case "$health" in
-            *'"access_configured":true'*) ;;
-            *) echo "::error::ACCESS_TEAM_DOMAIN / ACCESS_POLICY_AUD are not set on the worker — it is refusing all traffic. Fill them in wrangler.toml (see docs/dashboard-deploy.md) and redeploy." ; fail=1 ;;
-          esac
-          case "$health" in
-            *'"crm_binding_present":true'*) ;;
-            *) echo "::error::CRM_API_TOKEN Secrets Store binding did not resolve. Create the secret and confirm the deploy token has Secrets Store (read) scope." ; fail=1 ;;
-          esac
-
-          # No Access JWT → both the SPA and the proxy must refuse.
-          for path in / /api/prospects; do
+          for path in / /api/prospects /__health; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$host$path" || echo "000")
             case "$code" in
-              403|401) echo "OK: $path refused unauthenticated ($code)" ;;
-              302|303) echo "OK: $path redirected to Access login ($code)" ;;
+              302|303) echo "OK: $path -> Access login ($code)" ;;
+              401|403) echo "OK: $path refused ($code)" ;;
               000) echo "::warning::$path unreachable — DNS may still be propagating on a first deploy. Re-run to confirm." ;;
-              *) echo "::error::$path returned $code to an UNAUTHENTICATED request. The dashboard is exposed. Check that the Access policy covers this hostname and that workers_dev/preview_urls are disabled." ; fail=1 ;;
+              200)
+                if [ "$path" = "/__health" ]; then
+                  body=$(curl -s --max-time 30 "$host/__health")
+                  echo "health (Access bypass in effect for this path): $body"
+                  case "$body" in
+                    *'"access_configured":true'*) ;;
+                    *) echo "::error::/__health reachable but ACCESS_TEAM_DOMAIN / ACCESS_POLICY_AUD are unset — the worker is refusing all traffic." ; fail=1 ;;
+                  esac
+                  case "$body" in
+                    *'"crm_binding_present":true'*) ;;
+                    *) echo "::error::CRM_API_TOKEN Secrets Store binding did not resolve. Confirm the secret exists and the deploy token has Secrets Store (read)." ; fail=1 ;;
+                  esac
+                else
+                  echo "::error::$path returned 200 UNAUTHENTICATED. The dashboard is exposed — check the Access policy covers this hostname." ; fail=1
+                fi
+                ;;
+              *) echo "::error::$path returned $code unauthenticated — unexpected. Investigate before trusting the gate." ; fail=1 ;;
             esac
           done
 
-          # The workers.dev bypass hostname must not answer at all.
           bypass=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             https://fsc-dashboard.cball8475.workers.dev/ || echo "000")
           case "$bypass" in
             000|404|530|1016) echo "OK: workers.dev bypass hostname does not serve ($bypass)" ;;
-            *) echo "::error::fsc-dashboard.cball8475.workers.dev answered $bypass — this hostname is NOT covered by the Access policy. Confirm workers_dev = false and preview_urls = false in wrangler.toml." ; fail=1 ;;
+            *) echo "::error::fsc-dashboard.cball8475.workers.dev answered $bypass — not covered by the Access policy. Confirm workers_dev = false and preview_urls = false." ; fail=1 ;;
           esac
 
           exit $fail
