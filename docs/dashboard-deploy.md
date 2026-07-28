@@ -131,8 +131,16 @@ means the deploy isn't finished until these are set.
 
 site-admin → Settings → Secrets and variables → Actions.
 
-- **Add** `VITE_GOOGLE_PLACES_KEY`. The build needs it. It is a browser key —
-  public by design; restrict it in C4.
+- **`VITE_GOOGLE_PLACES_KEY` — do NOT add it.** The build does not need it, and
+  setting it publishes the key in the bundle. `App.jsx:869` falls back to
+  `localStorage`, and with the var unset the prospect-discovery UI renders a
+  "Paste Google API key…" field that persists per browser (the same pattern the
+  EATON dashboard uses for its bearer). Behind Access you are the only one who
+  reaches that UI. Paste it once and the key is never published.
+
+  If you ever do want it baked in, the current value is copyable from Netlify →
+  Site configuration → Environment variables, or from Google Cloud Console →
+  APIs & Services → Credentials.
 - **Delete** `VITE_CRM_API_TOKEN` and `VITE_API_TOKEN` if either exists. The
   workflow hard-fails when it finds one, on purpose: Vite would inline it
   straight back into the public bundle.

@@ -9,7 +9,11 @@ name: Deploy fsc-dashboard
 #
 # Required repo secrets:
 #   CLOUDFLARE_API_TOKEN   — needs Workers Scripts (edit) + Secrets Store (read)
-#   VITE_GOOGLE_PLACES_KEY — browser key, referrer-restricted; public by design
+#
+# Optional, and deliberately unset: VITE_GOOGLE_PLACES_KEY. Setting it inlines the
+# key into the public bundle. Left unset, the dashboard prompts for it once and
+# keeps it in localStorage — so the key is never published. See
+# docs/dashboard-deploy.md B2.
 
 on:
   push:
@@ -56,18 +60,21 @@ jobs:
             exit 1
           fi
 
+      # No VITE_* vars are passed on purpose: anything prefixed VITE_ is inlined
+      # into the public bundle at build time. The dashboard sources the Places key
+      # from localStorage instead.
       - name: Build
-        env:
-          VITE_GOOGLE_PLACES_KEY: ${{ secrets.VITE_GOOGLE_PLACES_KEY }}
         run: npm run build
 
       # Regression guard for audit Finding 1. Greps the built output for
       # credential shapes that must never be client-side. `fsc_` is the CRM
       # bearer prefix; the GitHub PAT prefixes are here because a previous
-      # Netlify var (VITE_GITHUB_TOKEN) would have published one.
+      # Netlify var (VITE_GITHUB_TOKEN) would have published one; AIza catches a
+      # Google Places key if VITE_GOOGLE_PLACES_KEY ever gets set (see B2 — it
+      # should stay unset and be entered via the in-app localStorage prompt).
       - name: Assert no credentials in the built bundle
         run: |
-          if grep -rEoh 'fsc_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' dist/ > /tmp/hits 2>/dev/null; then
+          if grep -rEoh 'fsc_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}' dist/ > /tmp/hits 2>/dev/null; then
             echo "::error::Credential-shaped strings found in dist/ — refusing to publish. Matched $(wc -l < /tmp/hits) occurrence(s); prefixes only:"
             cut -c1-12 /tmp/hits | sort -u
             exit 1
