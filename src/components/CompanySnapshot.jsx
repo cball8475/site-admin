@@ -304,6 +304,9 @@ export default function CompanySnapshot() {
   const [ads, setAds] = useState(null);
   const [seo, setSeo] = useState(null);
   const [seoPrev, setSeoPrev] = useState(null);
+  const [seoFixes, setSeoFixes] = useState(null);
+  const [seoFixHistory, setSeoFixHistory] = useState(null);
+  const [seoSnapStatus, setSeoSnapStatus] = useState(null);
   const [operators, setOperators] = useState(null);
   const [competitors, setCompetitors] = useState(null);
   const [backlinks, setBacklinks] = useState(null);
@@ -331,6 +334,9 @@ export default function CompanySnapshot() {
       ['ads', `/ads/metrics?days=${days}`, setAds],
       ['seo', `/seo/metrics?days=${days}`, setSeo],
       ['seoPrev', `/seo/metrics?days=${days * 2}`, setSeoPrev],
+      ['seoFixes', '/seo/fixes', setSeoFixes],
+      ['seoFixHistory', '/seo/fixes/history?limit=1500', setSeoFixHistory],
+      ['seoSnapStatus', '/seo/fixes/snapshot-status', setSeoSnapStatus],
       ['operators', '/prospects', (d) => { const ops = (d.prospects || []).filter(p => p.operator_status === 'pilot_active' || p.operator_status === 'active'); setOperators({ prospects: ops }); }, setOperators],
       ['competitors', '/competitors/auction-insights', setCompetitors],
       ['backlinks', '/seo/backlinks', setBacklinks],
@@ -626,6 +632,12 @@ export default function CompanySnapshot() {
         ) : seo ? (
           <SeoPanel seo={seo} seoPrev={seoPrev} days={days} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
+        {/* Fix tracker has its own data path (D1 snapshots, not live GSC) so it
+            renders — or reports its own failure — even when /seo/metrics is down */}
+        <SeoFixTracker
+          fixes={seoFixes} history={seoFixHistory} snapStatus={seoSnapStatus}
+          errors={{ fixes: errors.seoFixes, history: errors.seoFixHistory, status: errors.seoSnapStatus }}
+        />
       </Section>
 
       {/* ── Backlinks ──────────────────────────────────────────────────── */}
@@ -1612,6 +1624,208 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
   );
 }
 
+// ── SEO Fix Tracker ────────────────────────────────────────────────────────
+// Reads live D1 state: /seo/fixes (the tracked list), /seo/fixes/history
+// (daily cron snapshots), /seo/fixes/snapshot-status (cron health).
+// Replaced a hardcoded JSX array that looked keywords up in GSC's click-sorted
+// top-100 — any keyword that went a week without a click silently fell out of
+// that list and showed "Awaiting data" even while ranking on page 2.
+// Every degraded state here renders explicitly; nothing disappears quietly.
+function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
+  const loadError = errors.fixes || errors.history;
+  if (loadError) {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <ErrorBanner section="SEO Fix Tracker" error={loadError} />
+      </div>
+    );
+  }
+  if (!fixes) return null; // initial load
+
+  const allFixes = fixes.fixes || [];
+  const snaps = history?.snapshots || [];
+  const byFix = {};
+  snaps.forEach(s => { (byFix[s.fix_id] = byFix[s.fix_id] || []).push(s); });
+  Object.values(byFix).forEach(list => list.sort((a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date))));
+
+  const monitoring = allFixes.filter(f => f.status === 'monitoring');
+  const graduated = allFixes.filter(f => f.status === 'graduated');
+
+  // ── Cron health strip — a broken snapshot pipeline must be the first thing on screen
+  const fmtRunTime = (d) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  let health;
+  const lastRun = snapStatus?.last_run;
+  if (errors.status) {
+    health = { color: C.red, text: `Cron health unknown — snapshot-status failed: ${errors.status}` };
+  } else if (!lastRun) {
+    health = { color: C.red, text: 'Snapshot cron has NEVER run — no position data is being recorded' };
+  } else {
+    const ranAt = new Date(String(lastRun.ran_at).replace(' ', 'T') + 'Z'); // D1 datetime('now') is UTC
+    const ageH = (Date.now() - ranAt.getTime()) / 3600000;
+    const when = fmtRunTime(ranAt);
+    if (lastRun.status === 'error') {
+      health = { color: C.red, text: `Last snapshot FAILED (${when}): ${lastRun.error_message || 'unknown error'}` };
+    } else if (ageH > 26) {
+      health = { color: C.red, text: `Snapshot cron stalled — last ran ${Math.round(ageH)}h ago (${when})` };
+    } else if (lastRun.status === 'partial') {
+      health = { color: C.amber, text: `Last snapshot partial (${when}) — ${lastRun.error_message || 'some keywords skipped'}` };
+    } else {
+      health = { color: C.green, text: `Cron healthy — ${lastRun.fixes_matched}/${lastRun.fixes_total} keywords matched, ran ${when}` };
+    }
+  }
+
+  const daysSince = (iso) => {
+    if (!iso) return null;
+    const ms = Date.now() - new Date(String(iso).slice(0, 10) + 'T00:00:00').getTime();
+    return Math.max(0, Math.floor(ms / 86400000));
+  };
+  const fmtAge = (d) => d == null ? '—' : d === 0 ? 'today' : `${d}d`;
+
+  return (
+    <div style={{
+      background: C.panel, border: `1px solid ${C.border}`,
+      borderRadius: 8, overflow: 'hidden', marginBottom: 12, fontFamily: fontStack,
+    }}>
+      <div style={{
+        fontSize: 10, color: C.blue, textTransform: 'uppercase',
+        letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
+        borderBottom: `1px solid ${C.border}`,
+      }}>🎯 SEO Fix Tracker — Active Pushes ({monitoring.length})</div>
+      <div style={{
+        padding: '8px 14px', fontSize: 10, fontFamily: monoStack,
+        color: health.color, borderBottom: `1px solid ${C.border}`,
+        background: health.color === C.green ? 'transparent'
+          : health.color === C.amber ? 'rgba(245,158,11,0.06)' : 'rgba(239,68,68,0.08)',
+      }}>{health.color === C.green ? '●' : '⚠'} {health.text}</div>
+
+      {monitoring.length === 0 && (
+        <div style={{ padding: '10px 14px', fontSize: 11, color: C.muted }}>
+          No fixes in monitoring. Add one via POST /seo/fixes.
+        </div>
+      )}
+
+      {monitoring.map((fix, i) => {
+        const h = byFix[fix.id] || [];
+        const latest = h.length ? h[h.length - 1] : null;
+        const latestWithPos = [...h].reverse().find(s => s.position != null) || null;
+        const currentPos = latest && latest.position != null ? Number(latest.position) : null;
+        const startPos = fix.baseline_pos != null ? Number(fix.baseline_pos)
+          : (h.find(s => s.position != null) ? Number(h.find(s => s.position != null).position) : null);
+        const delta = (currentPos != null && startPos != null) ? (startPos - currentPos) : null; // positive = improved
+        const age = daysSince(fix.started_at || fix.created_at);
+        const snapAge = latest ? daysSince(latest.snapshot_date) : null;
+        const stale = snapAge != null && snapAge > 2;
+
+        // Explicit degraded states — each one says what is wrong and where to look
+        let stateChip = null;
+        let statusColor = C.muted;
+        if (h.length === 0) {
+          stateChip = { color: C.amber, label: '⚠ No snapshots yet' };
+        } else if (currentPos == null) {
+          stateChip = {
+            color: C.muted,
+            label: latestWithPos
+              ? `○ No GSC data in window (last seen ${Number(latestWithPos.position).toFixed(1)} on ${fmtDate(String(latestWithPos.snapshot_date).slice(0, 10))})`
+              : '○ No GSC data yet — query has never had impressions',
+          };
+        } else {
+          statusColor = delta == null ? C.muted : delta > 0.5 ? C.green : delta < -0.5 ? C.red : C.muted;
+        }
+
+        // ── Sparkline of actual daily positions (lower = better = higher on chart)
+        const pts = h.filter(s => s.position != null).slice(-30).map(s => Number(s.position));
+        const CHART_W = 140, CHART_H = 28, PAD = 3;
+        let spark = null;
+        if (pts.length >= 2) {
+          const lo = Math.min(...pts, 10), hi = Math.max(...pts, 10);
+          const range = Math.max(hi - lo, 1);
+          const toY = (pos) => PAD + ((pos - lo) / range) * (CHART_H - PAD * 2);
+          const toXi = (idx) => PAD + (idx / (pts.length - 1)) * (CHART_W - PAD * 2);
+          const line = pts.map((pos, idx) => `${toXi(idx).toFixed(1)},${toY(pos).toFixed(1)}`).join(' ');
+          const p1Y = toY(10);
+          spark = (
+            <svg width={CHART_W} height={CHART_H} style={{ display: 'block', marginBottom: 4, overflow: 'visible' }}>
+              <line x1={PAD} y1={p1Y} x2={CHART_W - PAD} y2={p1Y}
+                stroke="rgba(34,197,94,0.35)" strokeWidth={1} strokeDasharray="2,2" />
+              <text x={CHART_W - PAD + 2} y={p1Y + 2.5} fontSize={7}
+                fill="rgba(34,197,94,0.45)" fontFamily={monoStack}>P1</text>
+              <polyline points={line} fill="none" stroke={statusColor === C.muted ? C.blue : statusColor}
+                strokeWidth={1.5} opacity={0.85} />
+              <circle cx={toXi(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3}
+                fill={statusColor === C.muted ? C.blue : statusColor} />
+            </svg>
+          );
+        }
+
+        return (
+          <div key={fix.id} style={{
+            padding: '10px 14px',
+            borderBottom: i < monitoring.length - 1 ? `1px solid ${C.border}` : 'none',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{
+                fontSize: 12, color: C.text, fontWeight: 600,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+              }}>"{fix.query}"</span>
+              {stale && (
+                <span style={{ fontSize: 9, color: C.amber, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
+                  ⚠ stale — last snapshot {fmtDate(String(latest.snapshot_date).slice(0, 10))}
+                </span>
+              )}
+              {stateChip ? (
+                <span style={{ fontSize: 9, color: stateChip.color, fontWeight: 600, letterSpacing: 0.3, flexShrink: 0 }}>
+                  {stateChip.label}
+                </span>
+              ) : (
+                <span style={{ fontSize: 10, color: statusColor, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
+                  {delta == null ? `pos ${currentPos.toFixed(1)}` : delta > 0.5 ? `▲ +${delta.toFixed(1)}` : delta < -0.5 ? `▼ ${delta.toFixed(1)}` : '→ No change'}
+                </span>
+              )}
+            </div>
+
+            {spark}
+
+            <div style={{
+              fontSize: 10, color: C.muted, fontFamily: monoStack,
+              display: 'flex', gap: 10, flexWrap: 'wrap',
+            }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>{fix.page}</span>
+              <span>Start: <strong style={{ color: C.text }}>{startPos != null ? startPos.toFixed(1) : '—'}</strong> ({fmtAge(age)} ago)</span>
+              <span>Now: <strong style={{ color: stateChip ? C.muted : statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+              {latest && latest.position != null && <span>{latest.impressions}imp · {latest.clicks}clk</span>}
+            </div>
+          </div>
+        );
+      })}
+
+      {graduated.length > 0 && (
+        <details>
+          <summary style={{
+            padding: '10px 14px', cursor: 'pointer', userSelect: 'none',
+            fontSize: 10, color: C.muted, fontWeight: 600, letterSpacing: 0.5,
+            textTransform: 'uppercase', borderTop: `1px solid ${C.border}`,
+          }}>🎓 Graduated ({graduated.length})</summary>
+          {graduated.map((fix) => {
+            const h = byFix[fix.id] || [];
+            const lastPos = [...h].reverse().find(s => s.position != null);
+            return (
+              <div key={fix.id} style={{
+                display: 'flex', gap: 10, padding: '6px 14px', fontSize: 11,
+                borderTop: `1px solid ${C.border}`, color: C.muted, fontFamily: monoStack,
+              }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.text }}>"{fix.query}"</span>
+                <span>{fix.baseline_pos != null ? Number(fix.baseline_pos).toFixed(1) : '—'} → <strong style={{ color: C.green }}>{lastPos ? Number(lastPos.position).toFixed(1) : '—'}</strong></span>
+              </div>
+            );
+          })}
+        </details>
+      )}
+    </div>
+  );
+}
+
 // ── SEO Panel ──────────────────────────────────────────────────────────────
 function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
   // The API returns flat { totals: {clicks, impressions, ctr, avg_position}, daily, top_queries, top_pages }.
@@ -1786,145 +2000,6 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                 );
               })}
             </div>
-
-            {/* SEO Fix Tracker — manual list of recently-optimized queries, tracks ranking direction since fix date */}
-            {/* To add/remove: edit SEO_FIX_TRACKER array below. Each entry: { query, page, startDate (ISO), startPos } */}
-            {(() => {
-              const SEO_FIX_TRACKER = [
-                // Baseline positions captured at time of on-page optimization. Lower = better.
-                // Update startPos if re-optimized. Add new entries as new pages are pushed.
-                { query: 'dumpster rental florence sc',   page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-23', startPos: 37.1 },
-                { query: '30 yard dumpster rental',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-05-24', startPos: 6.2  },
-                { query: 'how much to rent a dumpster',   page: '/pricing.html',                      startDate: '2026-05-24', startPos: 17.0 },
-                { query: 'dumpster rental near me',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 5.3  },
-                { query: 'commercial dumpster rental',    page: '/construction-dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 6.6  },
-                { query: '40 yard dumpster rental',       page: '/dumpster-rental-florence-sc.html', startDate: '2026-06-03', startPos: 3.4  },
-              ];
-
-              const daysSince = (iso) => {
-                const ms = Date.now() - new Date(iso + 'T00:00:00').getTime();
-                return Math.max(0, Math.floor(ms / 86400000));
-              };
-              const fmtAge = (d) => d === 0 ? 'today' : d === 1 ? '1d' : `${d}d`;
-
-              return (
-                <div style={{
-                  background: C.panel, border: `1px solid ${C.border}`,
-                  borderRadius: 8, overflow: 'hidden', marginBottom: 12,
-                }}>
-                  <div style={{
-                    fontSize: 10, color: C.blue, textTransform: 'uppercase',
-                    letterSpacing: 0.8, fontWeight: 600, padding: '10px 14px',
-                    borderBottom: `1px solid ${C.border}`,
-                  }}>🎯 SEO Fix Tracker — Active Pushes</div>
-                  <div style={{ padding: '8px 14px 4px', fontSize: 10, color: C.faint, lineHeight: 1.4 }}>
-                    Direction of each optimized query since the fix shipped. Lower position = better. Re-indexing takes 1–3 weeks.
-                  </div>
-                  {SEO_FIX_TRACKER.map((fix, i) => {
-                    const match = queries.find(q => (q.query || '').toLowerCase() === fix.query.toLowerCase());
-                    const currentPos = match ? Number(match.position) : null;
-                    const startPos = Number(fix.startPos);
-                    const delta = (currentPos != null && !isNaN(startPos)) ? (startPos - currentPos) : null; // positive = improved
-                    const age = daysSince(fix.startDate);
-
-                    let statusColor;
-                    if (currentPos == null) {
-                      statusColor = C.muted;
-                    } else if (delta > 0.5) {
-                      statusColor = C.green;
-                    } else if (delta < -0.5) {
-                      statusColor = C.red;
-                    } else {
-                      statusColor = C.muted;
-                    }
-
-                    // ── Mini position track chart ──────────────────────────────
-                    // Scale: position 50 (far left / worst) → position 1 (far right / best)
-                    // Page 1 zone = positions 1–10 (right-hand green band)
-                    const CHART_W = 140, CHART_H = 28;
-                    const TRACK_PADDING = 10;
-                    const SCALE_MIN = 1, SCALE_MAX = 50;
-                    const toX = (pos) => {
-                      const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, pos));
-                      // map so pos=50 → left, pos=1 → right
-                      return ((SCALE_MAX - clamped) / (SCALE_MAX - SCALE_MIN)) * (CHART_W - TRACK_PADDING * 2) + TRACK_PADDING;
-                    };
-                    const p1X = toX(10); // x-position of page-1 threshold
-                    const startX = toX(startPos);
-                    const nowX = currentPos != null ? toX(currentPos) : null;
-                    const midY = CHART_H / 2;
-
-                    return (
-                      <div key={i} style={{
-                        padding: '10px 14px',
-                        borderBottom: i < SEO_FIX_TRACKER.length - 1 ? `1px solid ${C.border}` : 'none',
-                      }}>
-                        {/* Query name row */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <span style={{
-                            fontSize: 12, color: C.text, fontWeight: 600,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-                          }}>"{fix.query}"</span>
-                          {/* Status chip */}
-                          {currentPos == null ? (
-                            <span style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
-                              ⏱ Awaiting data
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 10, color: statusColor, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
-                              {delta > 0.5 ? `▲ +${delta.toFixed(1)}` : delta < -0.5 ? `▼ ${delta.toFixed(1)}` : '→ No change'}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Mini position track chart */}
-                        <svg width={CHART_W} height={CHART_H} style={{ display: 'block', marginBottom: 4, overflow: 'visible' }}>
-                          {/* Background track */}
-                          <rect x={TRACK_PADDING} y={midY - 2} width={CHART_W - TRACK_PADDING * 2} height={4} rx={2}
-                            fill="rgba(99,179,237,0.08)" stroke="rgba(99,179,237,0.12)" strokeWidth={0.5} />
-                          {/* Page 1 zone (positions 1–10, right side) */}
-                          <rect x={p1X} y={midY - 2} width={CHART_W - TRACK_PADDING - p1X} height={4} rx={2}
-                            fill="rgba(34,197,94,0.18)" />
-                          {/* Page 1 boundary tick */}
-                          <line x1={p1X} y1={midY - 7} x2={p1X} y2={midY + 7}
-                            stroke="rgba(34,197,94,0.35)" strokeWidth={1} strokeDasharray="2,2" />
-                          {/* "P1" label */}
-                          <text x={p1X} y={CHART_H - 1} textAnchor="middle"
-                            fontSize={7} fill="rgba(34,197,94,0.45)" fontFamily={monoStack}>P1</text>
-                          {/* Journey line (only when we have current data) */}
-                          {nowX != null && (
-                            <line x1={startX} y1={midY} x2={nowX} y2={midY}
-                              stroke={statusColor} strokeWidth={1.5} opacity={0.7} />
-                          )}
-                          {/* Start position dot */}
-                          <circle cx={startX} cy={midY} r={3.5}
-                            fill="rgba(200,223,240,0.15)" stroke="rgba(200,223,240,0.35)" strokeWidth={1} />
-                          {/* Current position dot */}
-                          {nowX != null && (
-                            <circle cx={nowX} cy={midY} r={5}
-                              fill={statusColor} stroke={`${statusColor}55`} strokeWidth={2} />
-                          )}
-                          {/* "50" label (worst end) */}
-                          <text x={TRACK_PADDING} y={CHART_H - 1} textAnchor="middle"
-                            fontSize={7} fill="rgba(200,223,240,0.2)" fontFamily={monoStack}>50</text>
-                        </svg>
-
-                        {/* Stats row */}
-                        <div style={{
-                          fontSize: 10, color: C.muted, fontFamily: monoStack,
-                          display: 'flex', gap: 10, flexWrap: 'wrap',
-                        }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>{fix.page}</span>
-                          <span>Start: <strong style={{ color: C.text }}>{startPos.toFixed(1)}</strong> ({fmtAge(age)} ago)</span>
-                          <span>Now: <strong style={{ color: statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
-                          {match && <span>{match.impressions}imp · {match.clicks}clk</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
 
             {/* Resource Pages — collapsed */}
             {resourcePages.length > 0 && (

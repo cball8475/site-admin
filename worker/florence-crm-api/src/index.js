@@ -362,6 +362,37 @@ async function sendLeadAlertEmail(env, { name, phone, city, zone, project_type, 
 }
 __name(sendLeadAlertEmail, "sendLeadAlertEmail");
 __name2(sendLeadAlertEmail, "sendLeadAlertEmail");
+async function sendOpsAlertEmail(env, subject, text) {
+  const from = `FSC Ops <${env.LEAD_ALERT_FROM || LEAD_ALERT_FROM}>`;
+  const to = env.LEAD_ALERT_TO || LEAD_ALERT_TO;
+  if (!env.RESEND_API_KEY && !env.MAILER) {
+    console.error("Ops alert NOT emailed (no RESEND_API_KEY and no MAILER binding): " + subject);
+    return { sent: false, reason: "no_mail_transport" };
+  }
+  try {
+    if (!env.RESEND_API_KEY && env.MAILER) {
+      const r = await env.MAILER.send({ to, from, subject, text, kind: "ops_alert" });
+      if (r && r.ok) return { sent: true, via: "mailer" };
+      console.error("Ops alert via MAILER failed: " + JSON.stringify(r).slice(0, 300));
+      return { sent: false, reason: r && r.reason || "mailer_failed", via: "mailer" };
+    }
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, text })
+    });
+    if (!res.ok) {
+      console.error("Ops alert email failed: " + res.status + " — " + (await res.text()).slice(0, 300));
+      return { sent: false, reason: "resend_" + res.status };
+    }
+    return { sent: true, via: "resend" };
+  } catch (e) {
+    console.error("Ops alert email error:", e);
+    return { sent: false, reason: "exception", error: e && e.message || String(e) };
+  }
+}
+__name(sendOpsAlertEmail, "sendOpsAlertEmail");
+__name2(sendOpsAlertEmail, "sendOpsAlertEmail");
 async function notifyOwner(env, db, lead, leadId) {
   const sms = await sendLeadSMS(env, lead, leadId);
   const email = await sendLeadAlertEmail(env, lead, leadId, sms);
@@ -787,20 +818,51 @@ __name(handleAdsMetrics, "handleAdsMetrics");
 __name2(handleAdsMetrics, "handleAdsMetrics");
 __name22(handleAdsMetrics, "handleAdsMetrics");
 var GSC_SITE_URL = "https://florencescservices.com/";
+var GSC_FALLBACK_LAG_DAYS = 3;
+async function getGscFreshestDate(accessToken) {
+  var fallback = new Date(Date.now() - GSC_FALLBACK_LAG_DAYS * 864e5).toISOString().slice(0, 10);
+  try {
+    var siteUrl = encodeURIComponent(GSC_SITE_URL);
+    var res = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites/" + siteUrl + "/searchAnalytics/query", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startDate: new Date(Date.now() - 10 * 864e5).toISOString().slice(0, 10),
+        endDate: new Date(Date.now()).toISOString().slice(0, 10),
+        dimensions: ["date"],
+        rowLimit: 25
+      })
+    });
+    if (!res.ok) throw new Error("GSC " + res.status);
+    var probeRows = (await res.json()).rows || [];
+    if (probeRows.length === 0) throw new Error("no dated rows in probe window");
+    // Default dataState is FINAL, so the max date returned is the freshest
+    // *finalized* day GSC has — usually 2 days back, not the 3 the old
+    // hardcoded lag assumed.
+    return probeRows.map(function(r) {
+      return r.keys[0];
+    }).sort().pop();
+  } catch (e) {
+    console.warn("GSC freshest-date probe failed (" + (e && e.message || e) + ") — falling back to " + GSC_FALLBACK_LAG_DAYS + "-day lag");
+    return fallback;
+  }
+}
+__name(getGscFreshestDate, "getGscFreshestDate");
+__name2(getGscFreshestDate, "getGscFreshestDate");
+__name22(getGscFreshestDate, "getGscFreshestDate");
 async function handleGscMetrics(request, env) {
   if (!env.GOOGLE_ADS_REFRESH_TOKEN || !env.GOOGLE_ADS_CLIENT_ID || !env.GOOGLE_ADS_CLIENT_SECRET) {
     return err("Google OAuth credentials not configured", 502);
   }
   const url = new URL(request.url);
   const days = parseInt(url.searchParams.get("days") || "7", 10);
-  const now = /* @__PURE__ */ new Date();
-  const lagDays = 3;
-  const endDate = new Date(now - lagDays * 864e5).toISOString().slice(0, 10);
-  const startDate = new Date(now - (days + lagDays) * 864e5).toISOString().slice(0, 10);
-  const prevEnd = new Date(now - (days + lagDays) * 864e5 - 864e5).toISOString().slice(0, 10);
-  const prevStart = new Date(now - (days * 2 + lagDays) * 864e5).toISOString().slice(0, 10);
   try {
     const accessToken = await getGoogleAccessToken(env);
+    const endDate = await getGscFreshestDate(accessToken);
+    const endMs = Date.parse(endDate + "T00:00:00Z");
+    const startDate = new Date(endMs - days * 864e5).toISOString().slice(0, 10);
+    const prevEnd = new Date(endMs - (days + 1) * 864e5).toISOString().slice(0, 10);
+    const prevStart = new Date(endMs - days * 2 * 864e5).toISOString().slice(0, 10);
     const siteUrl = encodeURIComponent(GSC_SITE_URL);
     const apiBase = `https://searchconsole.googleapis.com/webmasters/v3/sites/${siteUrl}/searchAnalytics/query`;
     const headers = {
@@ -883,7 +945,7 @@ async function handleGscMetrics(request, env) {
       period_days: days,
       current_range: { start: startDate, end: endDate },
       previous_range: { start: prevStart, end: prevEnd },
-      note: "GSC data has ~3 day lag",
+      note: "Window ends at GSC's freshest finalized day (probed live, typically 2 days back)",
       // Flat totals — the deployed dashboard reads seo.totals.{clicks,impressions,ctr,avg_position}
       totals: { ...currentTotals, avg_position: currentTotals.position },
       current: { totals: currentTotals },
@@ -1062,7 +1124,7 @@ async function handleSeoSnapshot(env) {
   var log = { job: "seo-position-snapshot", status: "success", fixes_total: 0, fixes_matched: 0, fixes_missed: null, error_message: null };
   try {
     await db.prepare("CREATE TABLE IF NOT EXISTS seo_fixes (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, page TEXT NOT NULL, status TEXT DEFAULT 'monitoring', suggested_fix TEXT, baseline_pos REAL, started_at TEXT, graduated_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))").run();
-    var fixesResult = await db.prepare("SELECT * FROM seo_fixes").all();
+    var fixesResult = await db.prepare("SELECT * FROM seo_fixes WHERE status != 'dropped'").all();
     var fixes = fixesResult.results || [];
     if (fixes.length === 0) {
       log.error_message = "No fixes exist \u2014 nothing to snapshot";
@@ -1075,9 +1137,8 @@ async function handleSeoSnapshot(env) {
     }
     var accessToken = await getGoogleAccessToken(env);
     var now2 = /* @__PURE__ */ new Date();
-    var lagDays = 3;
-    var endDate = new Date(now2 - lagDays * 864e5).toISOString().slice(0, 10);
-    var startDate = new Date(now2 - (7 + lagDays) * 864e5).toISOString().slice(0, 10);
+    var endDate = await getGscFreshestDate(accessToken);
+    var startDate = new Date(Date.parse(endDate + "T00:00:00Z") - 7 * 864e5).toISOString().slice(0, 10);
     var siteUrl = encodeURIComponent(GSC_SITE_URL);
     var apiBase = "https://searchconsole.googleapis.com/webmasters/v3/sites/" + siteUrl + "/searchAnalytics/query";
     var queriesRes = await fetch(apiBase, {
@@ -1103,14 +1164,28 @@ async function handleSeoSnapshot(env) {
     })).run();
     var snapshotDate = now2.toISOString().slice(0, 10);
     var missed = [];
-    var filtered = await Promise.all(fixes.map(function(fix2) {
+    var queryErrors = [];
+    // One GSC call per *unique* query — duplicate fixes tracking the same
+    // term share the result instead of burning extra API calls. Page paths
+    // stored in the query column can never match GSC's query dimension, so
+    // they are skipped and force a "partial" status until the row is fixed.
+    var uniqueQueries = [];
+    var queryIdx = {};
+    for (var u = 0; u < fixes.length; u++) {
+      var uq = (fixes[u].query || "").toLowerCase().trim();
+      if (uq.charAt(0) !== "/" && !(uq in queryIdx)) {
+        queryIdx[uq] = uniqueQueries.length;
+        uniqueQueries.push(uq);
+      }
+    }
+    var filtered = await Promise.all(uniqueQueries.map(function(q2) {
       return fetch(apiBase, {
         method: "POST",
         headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
         body: JSON.stringify({
           startDate,
           endDate,
-          dimensionFilterGroups: [{ filters: [{ dimension: "query", operator: "equals", expression: fix2.query }] }]
+          dimensionFilterGroups: [{ filters: [{ dimension: "query", operator: "equals", expression: q2 }] }]
         })
       }).then(function(r) {
         // A failed per-keyword query must stay distinguishable from "queried,
@@ -1122,19 +1197,23 @@ async function handleSeoSnapshot(env) {
         return { query_failed: String(e && e.message || e) };
       });
     }));
-    var queryErrors = [];
     for (var i = 0; i < fixes.length; i++) {
       var fix = fixes[i];
-      if (filtered[i].query_failed) {
-        // Skip the snapshot insert entirely for this keyword — no datapoint
-        // beats a false zero. Recorded in the cron log below.
-        queryErrors.push(fix.query + " (" + filtered[i].query_failed + ")");
+      var fixQuery = (fix.query || "").toLowerCase().trim();
+      if (fixQuery.charAt(0) === "/") {
+        queryErrors.push(fix.query + " (invalid: page path stored as query — it can never match GSC's query dimension; correct or delete fix id " + fix.id + ")");
         continue;
       }
-      var fRow = (filtered[i].rows || [])[0];
+      var qResult = filtered[queryIdx[fixQuery]];
+      if (qResult.query_failed) {
+        // Skip the snapshot insert entirely for this keyword — no datapoint
+        // beats a false zero. Recorded in the cron log below.
+        queryErrors.push(fix.query + " (" + qResult.query_failed + ")");
+        continue;
+      }
+      var fRow = (qResult.rows || [])[0];
       var match = fRow && fRow.impressions > 0 ? { position: fRow.position, impressions: fRow.impressions, clicks: fRow.clicks } : null;
       if (!match) {
-        var fixQuery = (fix.query || "").toLowerCase();
         for (var j = 0; j < gscRows.length; j++) {
           if (gscRows[j].query === fixQuery) {
             match = gscRows[j];
@@ -1174,6 +1253,12 @@ async function handleSeoSnapshot(env) {
     ).bind(log.job, finalStatus, log.fixes_total, log.fixes_matched, log.fixes_missed, finalError).run();
     if (queryErrors.length > 0) {
       console.error("SEO snapshot PARTIAL: " + log.fixes_matched + "/" + log.fixes_total + " matched; " + finalError);
+      // A degraded run must reach a human, not just a D1 log row nobody reads.
+      await sendOpsAlertEmail(
+        env,
+        "FSC SEO snapshot PARTIAL \u2014 " + queryErrors.length + " keyword(s) skipped on " + snapshotDate,
+        "The daily SEO position snapshot completed but skipped " + queryErrors.length + " keyword(s):\n\n" + queryErrors.join("\n") + "\n\nMatched " + log.fixes_matched + "/" + log.fixes_total + " tracked fixes.\nDetails: GET /seo/fixes/snapshot-status on florence-crm-api, or the SEO Fix Tracker health strip on the admin dashboard."
+      );
     } else {
       console.log("SEO snapshot OK: " + log.fixes_matched + "/" + log.fixes_total + " matched");
     }
@@ -1189,6 +1274,11 @@ async function handleSeoSnapshot(env) {
     } catch (logErr) {
       console.error("DOUBLE FAULT \u2014 could not write cron error to D1:", logErr);
     }
+    await sendOpsAlertEmail(
+      env,
+      "FSC SEO snapshot FAILED \u2014 " + new Date().toISOString().slice(0, 10),
+      "The daily SEO position snapshot cron FAILED and wrote no data:\n\n" + log.error_message + "\n\nNo positions were recorded for any tracked keyword today. The dashboard's SEO Fix Tracker will flag this as a stale/failed snapshot.\nDetails: GET /seo/fixes/snapshot-status on florence-crm-api."
+    );
     return log;
   }
 }
@@ -1209,18 +1299,18 @@ var worker_default = {
     if (path === "/webhook/twilio-inbound" && method === "POST") return handleTwilioInbound(request, db, env);
     if (path === "/webhook/mercury" && (method === "POST" || method === "GET")) return handleMercuryWebhook(request, db, env);
     if (path === "/health" && method === "GET") {
-      return json({ status: "ok", version: "2.26.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ status: "ok", version: "2.27.0", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/health/db" && method === "GET") {
       try {
-        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
+        if (!db) return json({ ok: false, error: "env.DB is undefined \u2014 binding not present", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.27.0" }, 503);
         const result = await db.prepare("SELECT 1 as ping").first();
         const dbOk = result?.ping === 1;
         await ensureMemorySeed(db);
         const mem = await db.prepare("SELECT COUNT(*) as c FROM memory").first();
-        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, dbOk ? 200 : 503);
+        return json({ ok: dbOk, memory_rows: mem?.c ?? 0, checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.27.0" }, dbOk ? 200 : 503);
       } catch (e) {
-        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.26.0" }, 503);
+        return json({ ok: false, error: e.message || "D1 query failed", checked_at: (/* @__PURE__ */ new Date()).toISOString(), version: "2.27.0" }, 503);
       }
     }
     const authHeader = request.headers.get("Authorization") || "";
@@ -1295,8 +1385,20 @@ var worker_default = {
       if (path === "/seo/fixes" && method === "POST") {
         await db.prepare("CREATE TABLE IF NOT EXISTS seo_fixes (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, page TEXT NOT NULL, status TEXT DEFAULT 'monitoring', suggested_fix TEXT, baseline_pos REAL, started_at TEXT, graduated_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))").run();
         const body = await request.json();
-        if (!body.query || !body.page) return err("Required: query, page");
-        const ins = await db.prepare("INSERT INTO seo_fixes (query, page, status, suggested_fix, baseline_pos, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))").bind(body.query, body.page, body.status || "monitoring", body.suggested_fix || null, body.baseline_pos || null).run();
+        const newQuery = String(body.query || "").trim();
+        const newPage = String(body.page || "").trim();
+        if (!newQuery || !newPage) return err("Required: query, page");
+        // A page path in the query column can never match GSC's query
+        // dimension — the fix would sit at "no data" forever. Reject at the
+        // door instead of failing silently every cron run.
+        if (newQuery.charAt(0) === "/" || /\.html?$/i.test(newQuery)) {
+          return err("query must be a search term, not a page path (got '" + newQuery + "'). Put the URL in the page field.");
+        }
+        // Duplicate (query, page) rows just burn cron API calls and clutter
+        // the tracker — return the existing fix instead of inserting a twin.
+        const dupFix = await db.prepare("SELECT id FROM seo_fixes WHERE lower(trim(query)) = lower(?) AND page = ? AND status != 'dropped'").bind(newQuery, newPage).first();
+        if (dupFix) return json({ success: true, id: dupFix.id, deduplicated: true });
+        const ins = await db.prepare("INSERT INTO seo_fixes (query, page, status, suggested_fix, baseline_pos, started_at) VALUES (?, ?, ?, ?, ?, datetime('now'))").bind(newQuery, newPage, body.status || "monitoring", body.suggested_fix || null, body.baseline_pos || null).run();
         return json({ success: true, id: ins.meta?.last_row_id });
       }
       if (path === "/seo/fixes" && method === "PATCH") {
@@ -1304,8 +1406,12 @@ var worker_default = {
         if (!body.id) return err("Required: id");
         const sets = [], vals = [];
         if (body.query !== void 0) {
+          const patchedQuery = String(body.query || "").trim();
+          if (!patchedQuery || patchedQuery.charAt(0) === "/" || /\.html?$/i.test(patchedQuery)) {
+            return err("query must be a non-empty search term, not a page path (got '" + patchedQuery + "')");
+          }
           sets.push("query = ?");
-          vals.push(body.query);
+          vals.push(patchedQuery);
         }
         if (body.page !== void 0) {
           sets.push("page = ?");
