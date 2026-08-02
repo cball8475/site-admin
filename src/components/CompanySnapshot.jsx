@@ -303,7 +303,6 @@ export default function CompanySnapshot() {
   const [leadsAnalytics, setLeadsAnalytics] = useState(null);
   const [ads, setAds] = useState(null);
   const [seo, setSeo] = useState(null);
-  const [seoPrev, setSeoPrev] = useState(null);
   const [seoFixes, setSeoFixes] = useState(null);
   const [seoFixHistory, setSeoFixHistory] = useState(null);
   const [seoSnapStatus, setSeoSnapStatus] = useState(null);
@@ -332,8 +331,11 @@ export default function CompanySnapshot() {
       ['stats', '/stats', setStats],
       ['leadsAnalytics', `/leads/analytics?days=${days}`, setLeadsAnalytics],
       ['ads', `/ads/metrics?days=${days}`, setAds],
+      // /seo/metrics already returns a correctly-windowed `previous` block.
+      // There was a second call here for a double-length window that the panel
+      // differenced to derive the prior period; that works for clicks and
+      // impressions but not for position or CTR, which are not additive.
       ['seo', `/seo/metrics?days=${days}`, setSeo],
-      ['seoPrev', `/seo/metrics?days=${days * 2}`, setSeoPrev],
       ['seoFixes', '/seo/fixes', setSeoFixes],
       ['seoFixHistory', '/seo/fixes/history?limit=1500', setSeoFixHistory],
       ['seoSnapStatus', '/seo/fixes/snapshot-status', setSeoSnapStatus],
@@ -630,7 +632,7 @@ export default function CompanySnapshot() {
             <ErrorBanner section="SEO" error={errors.seo} />
           )
         ) : seo ? (
-          <SeoPanel seo={seo} seoPrev={seoPrev} days={days} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
+          <SeoPanel seo={seo} days={days} actions={actionsFor("seo")} onComplete={completeAction} onDismiss={dismissAction} onSync={syncAction} />
         ) : null}
         {/* Fix tracker has its own data path (D1 snapshots, not live GSC) so it
             renders — or reports its own failure — even when /seo/metrics is down */}
@@ -1631,6 +1633,14 @@ function BacklinksPanel({ data, actions = [], onComplete, onDismiss }) {
 // top-100 — any keyword that went a week without a click silently fell out of
 // that list and showed "Awaiting data" even while ranking on page 2.
 // Every degraded state here renders explicitly; nothing disappears quietly.
+//
+// Each snapshot row carries two figures. `position` is a 7-day mean, stable
+// enough to headline but a moving average — consecutive days share 6/7 of
+// their input, so charting it alone produced a line that looked frozen no
+// matter what the rankings did. `position_1d` is the true single-day position
+// and is what the sparkline plots, with the mean drawn faintly behind it.
+// Rows written before position_1d shipped have it NULL and fall back to the
+// smoothed line on its own.
 function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
   const loadError = errors.fixes || errors.history;
   if (loadError) {
@@ -1715,8 +1725,12 @@ function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
           : (h.find(s => s.position != null) ? Number(h.find(s => s.position != null).position) : null);
         const delta = (currentPos != null && startPos != null) ? (startPos - currentPos) : null; // positive = improved
         const age = daysSince(fix.started_at || fix.created_at);
+        // snapshot_date is the date the GSC data covers, not the date the cron
+        // ran. GSC finalizes 2-3 days late, so a perfectly healthy keyword is
+        // always a few days back and the old >2 threshold would flag all of
+        // them. Past 5 days means runs were genuinely missed.
         const snapAge = latest ? daysSince(latest.snapshot_date) : null;
-        const stale = snapAge != null && snapAge > 2;
+        const stale = snapAge != null && snapAge > 5;
 
         // Explicit degraded states — each one says what is wrong and where to look
         let stateChip = null;
@@ -1734,27 +1748,97 @@ function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
           statusColor = delta == null ? C.muted : delta > 0.5 ? C.green : delta < -0.5 ? C.red : C.muted;
         }
 
-        // ── Sparkline of actual daily positions (lower = better = higher on chart)
-        const pts = h.filter(s => s.position != null).slice(-30).map(s => Number(s.position));
-        const CHART_W = 140, CHART_H = 28, PAD = 3;
+        // ── Sparkline (lower position = better = higher on the chart)
+        // Solid line is the true single-day position; the faint line behind it
+        // is the 7-day mean. Both are indexed against the same run of
+        // snapshots so they share an x-axis.
+        const recent = h.slice(-30);
+        const seriesOf = (key) => recent
+          .map((s, idx) => ({ idx, v: s[key] == null ? null : Number(s[key]) }))
+          .filter(pt => pt.v != null && !isNaN(pt.v));
+        const dailyPts = seriesOf('position_1d');
+        const smoothPts = seriesOf('position');
+        // Daily is the point of this chart, but it only exists for snapshots
+        // written after the 1d series shipped — fall back to the smoothed line
+        // alone for keywords whose history predates it.
+        const hasDaily = dailyPts.length >= 2;
+        const primary = hasDaily ? dailyPts : smoothPts;
+        const secondary = hasDaily ? smoothPts : [];
+
+        const CHART_W = 140, CHART_H = 34, PAD = 3;
         let spark = null;
-        if (pts.length >= 2) {
-          const lo = Math.min(...pts, 10), hi = Math.max(...pts, 10);
-          const range = Math.max(hi - lo, 1);
+        if (primary.length >= 2) {
+          const vals = primary.concat(secondary).map(pt => pt.v);
+          let lo = Math.min(...vals), hi = Math.max(...vals);
+          // Scale to the data, not to position 1. Anchoring the axis at P1
+          // spent most of the height on the empty gap above where the keyword
+          // actually ranks, flattening real movement into a couple of pixels.
+          // A floor on the span stops sub-position noise from being magnified
+          // into a dramatic-looking swing. Deliberately below 1: the common
+          // case here is a keyword grinding through fractions of a position,
+          // and a floor of 2 would flatten a real 0.4 move back into the same
+          // few pixels this is meant to fix. At 0.75 a 0.4 drift reads clearly
+          // while a 0.02 wobble still renders flat.
+          const MIN_SPAN = 0.75;
+          if (hi - lo < MIN_SPAN) {
+            const mid = (hi + lo) / 2;
+            lo = mid - MIN_SPAN / 2;
+            hi = mid + MIN_SPAN / 2;
+          }
+          const padV = (hi - lo) * 0.12;
+          lo = Math.max(1, lo - padV);
+          hi = hi + padV;
+          const range = Math.max(hi - lo, 0.5);
           const toY = (pos) => PAD + ((pos - lo) / range) * (CHART_H - PAD * 2);
-          const toXi = (idx) => PAD + (idx / (pts.length - 1)) * (CHART_W - PAD * 2);
-          const line = pts.map((pos, idx) => `${toXi(idx).toFixed(1)},${toY(pos).toFixed(1)}`).join(' ');
-          const p1Y = toY(10);
+          const span = Math.max(recent.length - 1, 1);
+          const toX = (idx) => PAD + (idx / span) * (CHART_W - PAD * 2);
+          // Break the line at missing days instead of interpolating across a
+          // gap — an absent snapshot is not a straight-line trend through it.
+          const toSegments = (pts) => {
+            const segs = [];
+            let cur = [];
+            pts.forEach((pt, i) => {
+              if (i > 0 && pt.idx - pts[i - 1].idx > 1) { if (cur.length) segs.push(cur); cur = []; }
+              cur.push(pt);
+            });
+            if (cur.length) segs.push(cur);
+            return segs;
+          };
+          const pathOf = (seg) => seg.map(pt => `${toX(pt.idx).toFixed(1)},${toY(pt.v).toFixed(1)}`).join(' ');
+          const lineColor = statusColor === C.muted ? C.blue : statusColor;
+          const last = primary[primary.length - 1];
+          // Draw the P1 line only when it is genuinely on the axis. When the
+          // keyword ranks below 10 the line sits off the top — mark it at the
+          // edge rather than stretching the axis down to reach it, which is
+          // what used to eat the chart's resolution.
+          const showP1 = 10 >= lo && 10 <= hi;
+          const p1Above = 10 < lo;
           spark = (
             <svg width={CHART_W} height={CHART_H} style={{ display: 'block', marginBottom: 4, overflow: 'visible' }}>
-              <line x1={PAD} y1={p1Y} x2={CHART_W - PAD} y2={p1Y}
-                stroke="rgba(34,197,94,0.35)" strokeWidth={1} strokeDasharray="2,2" />
-              <text x={CHART_W - PAD + 2} y={p1Y + 2.5} fontSize={7}
-                fill="rgba(34,197,94,0.45)" fontFamily={monoStack}>P1</text>
-              <polyline points={line} fill="none" stroke={statusColor === C.muted ? C.blue : statusColor}
-                strokeWidth={1.5} opacity={0.85} />
-              <circle cx={toXi(pts.length - 1)} cy={toY(pts[pts.length - 1])} r={3}
-                fill={statusColor === C.muted ? C.blue : statusColor} />
+              {showP1 && (
+                <>
+                  <line x1={PAD} y1={toY(10)} x2={CHART_W - PAD} y2={toY(10)}
+                    stroke="rgba(34,197,94,0.35)" strokeWidth={1} strokeDasharray="2,2" />
+                  <text x={CHART_W - PAD + 2} y={toY(10) + 2.5} fontSize={7}
+                    fill="rgba(34,197,94,0.45)" fontFamily={monoStack}>P1</text>
+                </>
+              )}
+              {p1Above && (
+                <text x={PAD} y={PAD + 5} fontSize={7}
+                  fill="rgba(34,197,94,0.40)" fontFamily={monoStack}>↑P1</text>
+              )}
+              {toSegments(secondary).filter(s => s.length >= 2).map((seg, si) => (
+                <polyline key={`s${si}`} points={pathOf(seg)} fill="none"
+                  stroke={C.muted} strokeWidth={1} opacity={0.4} />
+              ))}
+              {toSegments(primary).map((seg, si) => seg.length >= 2 ? (
+                <polyline key={`p${si}`} points={pathOf(seg)} fill="none"
+                  stroke={lineColor} strokeWidth={1.5} opacity={0.9} />
+              ) : (
+                <circle key={`p${si}`} cx={toX(seg[0].idx)} cy={toY(seg[0].v)} r={1.5}
+                  fill={lineColor} opacity={0.9} />
+              ))}
+              <circle cx={toX(last.idx)} cy={toY(last.v)} r={3} fill={lineColor} />
             </svg>
           );
         }
@@ -1771,7 +1855,7 @@ function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
               }}>"{fix.query}"</span>
               {stale && (
                 <span style={{ fontSize: 9, color: C.amber, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', flexShrink: 0 }}>
-                  ⚠ stale — last snapshot {fmtDate(String(latest.snapshot_date).slice(0, 10))}
+                  ⚠ stale — data only through {fmtDate(String(latest.snapshot_date).slice(0, 10))}
                 </span>
               )}
               {stateChip ? (
@@ -1793,7 +1877,10 @@ function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
             }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>{fix.page}</span>
               <span>Start: <strong style={{ color: C.text }}>{startPos != null ? startPos.toFixed(1) : '—'}</strong> ({fmtAge(age)} ago)</span>
-              <span>Now: <strong style={{ color: stateChip ? C.muted : statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+              <span title="7-day mean ending at the latest GSC data date">Now (7d): <strong style={{ color: stateChip ? C.muted : statusColor }}>{currentPos != null ? currentPos.toFixed(1) : '—'}</strong></span>
+              {latest && latest.position_1d != null && (
+                <span title="True position on the latest GSC data date">Day: <strong style={{ color: C.text }}>{Number(latest.position_1d).toFixed(1)}</strong></span>
+              )}
               {latest && latest.position != null && <span>{latest.impressions}imp · {latest.clicks}clk</span>}
             </div>
           </div>
@@ -1827,7 +1914,7 @@ function SeoFixTracker({ fixes, history, snapStatus, errors = {} }) {
 }
 
 // ── SEO Panel ──────────────────────────────────────────────────────────────
-function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onSync }) {
+function SeoPanel({ seo, days, actions = [], onComplete, onDismiss, onSync }) {
   // The API returns flat { totals: {clicks, impressions, ctr, avg_position}, daily, top_queries, top_pages }.
   // Normalize: read totals directly, map avg_position → position for display code.
   const normalizeTotals = (raw) => {
@@ -1836,14 +1923,16 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
   };
   // Current period totals — API returns seo.totals (flat, no current/previous wrapper).
   const t = normalizeTotals(seo.totals || {});
-  // Previous period: seoPrev fetches 2x window. Derive the prior-only half by subtracting current from 2x.
-  const pRaw = seoPrev?.totals || {};
-  const p = normalizeTotals(pRaw.clicks != null ? {
-    clicks: (Number(pRaw.clicks) || 0) - (Number(t.clicks) || 0),
-    impressions: (Number(pRaw.impressions) || 0) - (Number(t.impressions) || 0),
-    ctr: pRaw.ctr,
-    position: pRaw.position || pRaw.avg_position || '',
-  } : {});
+  // Prior period, straight from the API's own `previous` block — a real query
+  // over the `days` days immediately before the current window.
+  //
+  // This used to be derived by subtracting the current window from a separate
+  // double-length one. Clicks and impressions survive that (they sum), but
+  // position and CTR are averages and were passed through unsubtracted, so the
+  // comparison was current-7d against a 14d average *containing those same 7
+  // days*. Every position delta came out damped toward zero — the Avg Position
+  // arrow could never show a real move.
+  const p = normalizeTotals(seo.previous?.totals || {});
   const queries = seo.top_queries || [];
 
   // Daily series for charting
@@ -1930,14 +2019,16 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
         const moneyPages = allPages.filter(p => p.type === 'money').sort((a, b) => b.impressions - a.impressions);
         const resourcePages = allPages.filter(p => p.type === 'resource').sort((a, b) => b.impressions - a.impressions);
 
-        // Build prev-period position lookup from seoPrev (2x window)
+        // Prior-period position per page, from the API's `previous` block —
+        // the same `days`-long window offset back by `days`, so a page's delta
+        // is a like-for-like comparison instead of current-vs-a-window-that-
+        // includes-current.
+        const prevPages = seo.previous?.top_pages || [];
         const prevMap = {};
-        if (seoPrev?.top_pages) {
-          seoPrev.top_pages.forEach(p => {
-            const path = p.path || p.page || p.page_url || '';
-            prevMap[path] = Number(p.position);
-          });
-        }
+        prevPages.forEach(p => {
+          const path = p.path || p.page || p.page_url || '';
+          prevMap[path] = Number(p.position);
+        });
 
         return (
           <>
@@ -1953,7 +2044,7 @@ function SeoPanel({ seo, seoPrev, days, actions = [], onComplete, onDismiss, onS
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               }}>
                 <span>💰 Money Page Movement</span>
-                {seoPrev && <span style={{ color: C.faint, fontWeight: 400, textTransform: 'none', fontSize: 9 }}>vs {days * 2}-day avg</span>}
+                {prevPages.length > 0 && <span style={{ color: C.faint, fontWeight: 400, textTransform: 'none', fontSize: 9 }}>vs prior {days}d</span>}
               </div>
               {moneyPages.length === 0 ? (
                 <div style={{ padding: '12px 14px', fontSize: 12, color: C.muted }}>No rental/service pages in GSC data yet.</div>
