@@ -860,9 +860,14 @@ async function handleGscMetrics(request, env) {
     const accessToken = await getGoogleAccessToken(env);
     const endDate = await getGscFreshestDate(accessToken);
     const endMs = Date.parse(endDate + "T00:00:00Z");
-    const startDate = new Date(endMs - days * 864e5).toISOString().slice(0, 10);
-    const prevEnd = new Date(endMs - (days + 1) * 864e5).toISOString().slice(0, 10);
-    const prevStart = new Date(endMs - days * 2 * 864e5).toISOString().slice(0, 10);
+    // GSC date ranges are inclusive on both ends: a `days`-long window ends at
+    // endDate and starts days-1 back. The previous window is the `days` days
+    // immediately before it. Starting the current window `days` back made it
+    // one day longer than the previous window it gets compared against, which
+    // biased every period-over-period delta on the dashboard.
+    const startDate = new Date(endMs - (days - 1) * 864e5).toISOString().slice(0, 10);
+    const prevEnd = new Date(endMs - days * 864e5).toISOString().slice(0, 10);
+    const prevStart = new Date(endMs - (2 * days - 1) * 864e5).toISOString().slice(0, 10);
     const siteUrl = encodeURIComponent(GSC_SITE_URL);
     const apiBase = `https://searchconsole.googleapis.com/webmasters/v3/sites/${siteUrl}/searchAnalytics/query`;
     const headers = {
@@ -889,6 +894,13 @@ async function handleGscMetrics(request, env) {
       headers,
       body: JSON.stringify({ startDate: prevStart, endDate: prevEnd })
     });
+    // Per-page prior period. Without this the dashboard had no like-for-like
+    // page comparison and fell back to differencing a double-length window.
+    const prevPagesRes = await fetch(apiBase, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate: prevStart, endDate: prevEnd, dimensions: ["page"], rowLimit: 50 })
+    });
     const currentAggRes = await fetch(apiBase, {
       method: "POST",
       headers,
@@ -898,11 +910,12 @@ async function handleGscMetrics(request, env) {
       const errText = await queriesRes.text();
       return err(`GSC API error: ${queriesRes.status} \u2014 ${errText.slice(0, 300)}`, 502);
     }
-    const [queriesData, pagesData, dailyData, prevData, currentAggData] = await Promise.all([
+    const [queriesData, pagesData, dailyData, prevData, prevPagesData, currentAggData] = await Promise.all([
       queriesRes.json(),
       pagesRes.ok ? pagesRes.json() : { rows: [] },
       dailyRes.ok ? dailyRes.json() : { rows: [] },
       prevRes.ok ? prevRes.json() : { rows: [] },
+      prevPagesRes.ok ? prevPagesRes.json() : { rows: [] },
       currentAggRes.ok ? currentAggRes.json() : { rows: [] }
     ]);
     const queryRows = (queriesData.rows || []).map((r) => ({
@@ -912,7 +925,7 @@ async function handleGscMetrics(request, env) {
       ctr: (r.ctr * 100).toFixed(1) + "%",
       position: r.position.toFixed(1)
     }));
-    const pageRows = (pagesData.rows || []).map((r) => ({
+    const mapPageRows = (data) => (data.rows || []).map((r) => ({
       path: r.keys[0].replace(GSC_SITE_URL, "/"),
       page: r.keys[0].replace(GSC_SITE_URL, "/"),
       clicks: r.clicks,
@@ -920,6 +933,8 @@ async function handleGscMetrics(request, env) {
       ctr: (r.ctr * 100).toFixed(1) + "%",
       position: r.position.toFixed(1)
     }));
+    const pageRows = mapPageRows(pagesData);
+    const prevPageRows = mapPageRows(prevPagesData);
     const dailyRows = (dailyData.rows || []).map((r) => ({
       date: r.keys[0],
       clicks: r.clicks,
@@ -948,8 +963,8 @@ async function handleGscMetrics(request, env) {
       note: "Window ends at GSC's freshest finalized day (probed live, typically 2 days back)",
       // Flat totals — the deployed dashboard reads seo.totals.{clicks,impressions,ctr,avg_position}
       totals: { ...currentTotals, avg_position: currentTotals.position },
-      current: { totals: currentTotals },
-      previous: { totals: previousTotals },
+      current: { totals: currentTotals, top_pages: pageRows },
+      previous: { totals: previousTotals, top_pages: prevPageRows },
       top_queries: queryRows,
       top_pages: pageRows,
       daily: dailyRows,
@@ -1116,11 +1131,34 @@ var SNAPSHOT_TABLES_SQL = [
     ran_at TEXT DEFAULT (datetime('now'))
   )`
 ];
+// Columns added after seo_fix_snapshots shipped. CREATE TABLE IF NOT EXISTS
+// won't add them to an existing table, and ALTER TABLE ADD COLUMN is not
+// idempotent in SQLite, so check table_info first rather than swallowing the
+// error — a genuinely failing migration should still surface.
+var SNAPSHOT_ADDED_COLUMNS = [
+  ["position_1d", "REAL"],
+  ["impressions_1d", "INTEGER DEFAULT 0"],
+  ["clicks_1d", "INTEGER DEFAULT 0"],
+  ["data_date", "TEXT"]
+];
+async function ensureSnapshotColumns(db) {
+  var info = await db.prepare("PRAGMA table_info(seo_fix_snapshots)").all();
+  var have = {};
+  (info.results || []).forEach(function(r) { have[r.name] = true; });
+  for (var i = 0; i < SNAPSHOT_ADDED_COLUMNS.length; i++) {
+    var col = SNAPSHOT_ADDED_COLUMNS[i];
+    if (!have[col[0]]) {
+      await db.prepare("ALTER TABLE seo_fix_snapshots ADD COLUMN " + col[0] + " " + col[1]).run();
+    }
+  }
+}
+__name(ensureSnapshotColumns, "ensureSnapshotColumns");
 async function handleSeoSnapshot(env) {
   var db = env.DB;
   for (var sql of SNAPSHOT_TABLES_SQL) {
     await db.prepare(sql).run();
   }
+  await ensureSnapshotColumns(db);
   var log = { job: "seo-position-snapshot", status: "success", fixes_total: 0, fixes_matched: 0, fixes_missed: null, error_message: null };
   try {
     await db.prepare("CREATE TABLE IF NOT EXISTS seo_fixes (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, page TEXT NOT NULL, status TEXT DEFAULT 'monitoring', suggested_fix TEXT, baseline_pos REAL, started_at TEXT, graduated_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))").run();
@@ -1136,9 +1174,16 @@ async function handleSeoSnapshot(env) {
       throw new Error("FATAL: Google OAuth secrets missing (GOOGLE_ADS_REFRESH_TOKEN / CLIENT_ID / CLIENT_SECRET). Cannot query GSC.");
     }
     var accessToken = await getGoogleAccessToken(env);
-    var now2 = /* @__PURE__ */ new Date();
     var endDate = await getGscFreshestDate(accessToken);
-    var startDate = new Date(Date.parse(endDate + "T00:00:00Z") - 7 * 864e5).toISOString().slice(0, 10);
+    // Two windows per keyword, stored side by side:
+    //   position_1d — endDate alone. The real position that day, so a genuine
+    //                 ranking move shows up at full size the day it lands.
+    //   position    — the 7-day mean ending at endDate (inclusive, so 6 days
+    //                 back). Kept as the headline/baseline figure because it
+    //                 is stable, but it is a moving average: consecutive days
+    //                 share 6/7 of their input, which is why the tracker
+    //                 sparkline looked frozen when plotted on its own.
+    var startDate = new Date(Date.parse(endDate + "T00:00:00Z") - 6 * 864e5).toISOString().slice(0, 10);
     var siteUrl = encodeURIComponent(GSC_SITE_URL);
     var apiBase = "https://searchconsole.googleapis.com/webmasters/v3/sites/" + siteUrl + "/searchAnalytics/query";
     var queriesRes = await fetch(apiBase, {
@@ -1162,7 +1207,14 @@ async function handleSeoSnapshot(env) {
         return { query: r.keys[0], clicks: r.clicks, impressions: r.impressions, position: r.position };
       })
     })).run();
-    var snapshotDate = now2.toISOString().slice(0, 10);
+    // Date the row by the day the data actually covers, not the day the cron
+    // ran. GSC finalizes 2-3 days late, so stamping rows with "today" shifted
+    // the whole series forward by that lag. It also meant a run on a day when
+    // GSC had not advanced wrote a brand new row holding identical numbers —
+    // a flat step in the chart that looked like a stalled ranking rather than
+    // an absent data point. Keyed on the data date, that run now updates the
+    // existing row in place via INSERT OR REPLACE.
+    var snapshotDate = endDate;
     var missed = [];
     var queryErrors = [];
     // One GSC call per *unique* query — duplicate fixes tracking the same
@@ -1178,13 +1230,13 @@ async function handleSeoSnapshot(env) {
         uniqueQueries.push(uq);
       }
     }
-    var filtered = await Promise.all(uniqueQueries.map(function(q2) {
+    var fetchQueryWindow = function(q2, wStart, wEnd) {
       return fetch(apiBase, {
         method: "POST",
         headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
         body: JSON.stringify({
-          startDate,
-          endDate,
+          startDate: wStart,
+          endDate: wEnd,
           dimensionFilterGroups: [{ filters: [{ dimension: "query", operator: "equals", expression: q2 }] }]
         })
       }).then(function(r) {
@@ -1196,6 +1248,16 @@ async function handleSeoSnapshot(env) {
       }).catch(function(e) {
         return { query_failed: String(e && e.message || e) };
       });
+    };
+    var filtered = await Promise.all(uniqueQueries.map(function(q2) {
+      return fetchQueryWindow(q2, startDate, endDate);
+    }));
+    // Same keywords, single day. A low-volume term can legitimately draw zero
+    // impressions on a given day: that is "no data for this day", not a
+    // failure and not a rank of zero, so it stores NULL and the daily line
+    // breaks rather than diving to the floor.
+    var filtered1d = await Promise.all(uniqueQueries.map(function(q2) {
+      return fetchQueryWindow(q2, endDate, endDate);
     }));
     for (var i = 0; i < fixes.length; i++) {
       var fix = fixes[i];
@@ -1221,14 +1283,24 @@ async function handleSeoSnapshot(env) {
           }
         }
       }
+      // Single-day figures for the same keyword. A failed 1d query degrades to
+      // NULL rather than skipping the row — the smoothed value is still worth
+      // recording, and a gap in the daily line is the honest rendering.
+      var q1Result = filtered1d[queryIdx[fixQuery]];
+      var r1 = q1Result && !q1Result.query_failed ? (q1Result.rows || [])[0] : null;
+      var daily = r1 && r1.impressions > 0 ? r1 : null;
       await db.prepare(
-        "INSERT OR REPLACE INTO seo_fix_snapshots (fix_id, query, position, impressions, clicks, snapshot_date) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT OR REPLACE INTO seo_fix_snapshots (fix_id, query, position, impressions, clicks, position_1d, impressions_1d, clicks_1d, data_date, snapshot_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         fix.id,
         fix.query,
         match ? match.position : null,
         match ? match.impressions : 0,
         match ? match.clicks : 0,
+        daily ? daily.position : null,
+        daily ? daily.impressions : 0,
+        daily ? daily.clicks : 0,
+        endDate,
         snapshotDate
       ).run();
       if (match) {
