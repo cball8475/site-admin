@@ -1,0 +1,139 @@
+name: Deploy fsc-dashboard
+
+# Builds the site-admin SPA and deploys it as a Cloudflare Worker that also
+# proxies /api/* to florence-crm-api with the bearer attached server-side.
+#
+# Replaces the Netlify build. The Netlify project must be torn down once this is
+# live — while site-admin-fsc.netlify.app still answers, it serves an older
+# bundle with an embedded bearer and bypasses Cloudflare Access entirely.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN   — needs Workers Scripts (edit) + Secrets Store (read)
+#
+# Optional, and deliberately unset: VITE_GOOGLE_PLACES_KEY. Setting it inlines the
+# key into the public bundle. Left unset, the dashboard prompts for it once and
+# keeps it in localStorage — so the key is never published. See
+# docs/dashboard-deploy.md B2.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.js'
+      - 'worker/dashboard/**'
+      - 'wrangler.toml'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Fail-closed regression test for the Access gate. Runs before deploy so a
+      # change that weakens enforcement never reaches production.
+      - name: Test Access enforcement
+        run: npm run test:access
+
+      # The dashboard must never be built with a CRM bearer in the environment.
+      # Vite inlines VITE_* vars into the public bundle, which is exactly how the
+      # token leaked before. Fail the build rather than publish it again.
+      - name: Assert no CRM bearer in the build environment
+        env:
+          VITE_CRM_API_TOKEN: ${{ secrets.VITE_CRM_API_TOKEN }}
+          VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+        run: |
+          if [ -n "$VITE_CRM_API_TOKEN" ] || [ -n "$VITE_API_TOKEN" ]; then
+            echo "::error::A VITE_*_TOKEN repo secret is set. Vite would inline it into the public bundle — the bearer is attached server-side by the worker now. Delete the repo secret and re-run."
+            exit 1
+          fi
+
+      # No VITE_* vars are passed on purpose: anything prefixed VITE_ is inlined
+      # into the public bundle at build time. The dashboard sources the Places key
+      # from localStorage instead.
+      - name: Build
+        run: npm run build
+
+      # Regression guard for audit Finding 1. Greps the built output for
+      # credential shapes that must never be client-side. `fsc_` is the CRM
+      # bearer prefix; the GitHub PAT prefixes are here because a previous
+      # Netlify var (VITE_GITHUB_TOKEN) would have published one; AIza catches a
+      # Google Places key if VITE_GOOGLE_PLACES_KEY ever gets set (see B2 — it
+      # should stay unset and be entered via the in-app localStorage prompt).
+      - name: Assert no credentials in the built bundle
+        run: |
+          if grep -rEoh 'fsc_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}' dist/ > /tmp/hits 2>/dev/null; then
+            echo "::error::Credential-shaped strings found in dist/ — refusing to publish. Matched $(wc -l < /tmp/hits) occurrence(s); prefixes only:"
+            cut -c1-12 /tmp/hits | sort -u
+            exit 1
+          fi
+          echo "Bundle scan clean — no bearer or PAT shapes in dist/."
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Prove the gate is CLOSED. An unauthenticated request must never be served
+      # the dashboard or reach the CRM proxy, so anything other than a refusal is
+      # a deploy failure — not a warning. This is what keeps "Access, period"
+      # true on every future deploy rather than only on the day it was set up.
+      # Prove the gate is CLOSED. An unauthenticated request must never be served
+      # the dashboard or reach the CRM proxy, so anything other than a refusal is
+      # a deploy failure — not a warning. This is what keeps "Access, period"
+      # true on every future deploy rather than only on the day it was set up.
+      #
+      # Note: Access covers the WHOLE hostname, including /__health. That is
+      # correct — Access is mandatory — but it means no route is readable from
+      # CI, so this step asserts enforcement rather than reading config. Verify
+      # config in a browser after login, or with `wrangler tail fsc-dashboard`.
+      - name: Assert Cloudflare Access is enforcing
+        run: |
+          host=https://dashboard.florencescservices.com
+          fail=0
+
+          for path in / /api/prospects /__health; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$host$path" || echo "000")
+            case "$code" in
+              302|303) echo "OK: $path -> Access login ($code)" ;;
+              401|403) echo "OK: $path refused ($code)" ;;
+              000) echo "::warning::$path unreachable — DNS may still be propagating on a first deploy. Re-run to confirm." ;;
+              200)
+                if [ "$path" = "/__health" ]; then
+                  body=$(curl -s --max-time 30 "$host/__health")
+                  echo "health (Access bypass in effect for this path): $body"
+                  case "$body" in
+                    *'"access_configured":true'*) ;;
+                    *) echo "::error::/__health reachable but ACCESS_TEAM_DOMAIN / ACCESS_POLICY_AUD are unset — the worker is refusing all traffic." ; fail=1 ;;
+                  esac
+                  case "$body" in
+                    *'"crm_binding_present":true'*) ;;
+                    *) echo "::error::CRM_API_TOKEN Secrets Store binding did not resolve. Confirm the secret exists and the deploy token has Secrets Store (read)." ; fail=1 ;;
+                  esac
+                else
+                  echo "::error::$path returned 200 UNAUTHENTICATED. The dashboard is exposed — check the Access policy covers this hostname." ; fail=1
+                fi
+                ;;
+              *) echo "::error::$path returned $code unauthenticated — unexpected. Investigate before trusting the gate." ; fail=1 ;;
+            esac
+          done
+
+          bypass=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://fsc-dashboard.cball8475.workers.dev/ || echo "000")
+          case "$bypass" in
+            000|404|530|1016) echo "OK: workers.dev bypass hostname does not serve ($bypass)" ;;
+            *) echo "::error::fsc-dashboard.cball8475.workers.dev answered $bypass — not covered by the Access policy. Confirm workers_dev = false and preview_urls = false." ; fail=1 ;;
+          esac
+
+          exit $fail

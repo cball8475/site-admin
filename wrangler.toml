@@ -1,0 +1,76 @@
+# fsc-dashboard — the site-admin SPA plus its same-origin /api proxy.
+#
+# Access is mandatory. Everything below is arranged so the dashboard is reachable
+# ONLY through dashboard.florencescservices.com behind a Cloudflare Access policy.
+#
+# This config lives at the repo root (not under worker/) because the static
+# assets it serves are this repo's Vite build output, ./dist. The other four
+# workers keep their own wrangler.toml under worker/<name>/ and are deployed with
+# `workingDirectory:` set, so they are unaffected by this file.
+#
+# Deploy: .github/workflows/deploy-dashboard.yml. Setup: docs/dashboard-deploy.md.
+
+name = "fsc-dashboard"
+main = "worker/dashboard/src/index.js"
+compatibility_date = "2026-07-25"
+# Account ID is not a secret (it appears in dashboard URLs); the API token is.
+account_id = "37821191a8c1419e055c2c0a30546589"
+
+# ── Bypass hostnames: both OFF ──────────────────────────────────────────────
+# A Worker is reachable at fsc-dashboard.<subdomain>.workers.dev, and separately
+# at per-version preview URLs. The Access policy is attached to
+# dashboard.florencescservices.com and covers NEITHER of those, so leaving either
+# enabled leaves an unauthenticated door into the dashboard and the CRM proxy.
+#
+# Both are set explicitly rather than relying on defaults. Wrangler would infer
+# workers_dev = false from the [[routes]] block below, and preview_urls defaults
+# to matching workers_dev on wrangler >= 4.44 — but inferred security is not
+# security, and a dashboard-side toggle gets overwritten by the next deploy if it
+# disagrees with this file.
+workers_dev = false
+preview_urls = false
+
+# ── Static assets — the built SPA ───────────────────────────────────────────
+# run_worker_first = true → the worker script runs for EVERY request, so the
+# Access JWT is verified before any asset is served, not just before /api/*.
+# Costs one worker invocation per request, which is irrelevant at this scale and
+# buys enforcement that survives the Access policy being removed or misapplied.
+# The worker defers to env.ASSETS.fetch() once authenticated, which honours
+# not_found_handling below.
+[assets]
+directory = "./dist/"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# The CRM bearer, read server-side at request time. Same store that already
+# holds EATON_TOKEN for eaton-ehs-api, so this introduces no new mechanism.
+# The deploying API token needs Secrets Store (read) scope.
+[[secrets_store_secrets]]
+binding = "CRM_API_TOKEN"
+store_id = "80c48360a0e54dd69425da2dfbde21ad"
+secret_name = "CRM_API_TOKEN"
+
+[vars]
+# Upstream CRM. Not a secret — already a public hostname.
+CRM_ORIGIN = "https://api.florencescservices.com"
+
+# ── Cloudflare Access ───────────────────────────────────────────────────────
+# Read from the live account 2026-07-25. Neither is a secret: the AUD tag is an
+# audience identifier that travels in the JWT, not a credential. If either is
+# blanked the worker refuses EVERY request except /__health — unconfigured means
+# locked, not open.
+#
+# Access application "FSC Dashboard" (id f584791f-cc99-45f0-90f1-e750c2c5cb43),
+# self-hosted on dashboard.florencescservices.com, 24h session, one policy
+# ("Charlie only", allow). Only identity provider on the account is One-time PIN,
+# so login is an emailed code — the policy's address must be a mailbox that is
+# actually readable. See docs/dashboard-deploy.md A3.
+ACCESS_TEAM_DOMAIN = "https://florencesc.cloudflareaccess.com"
+ACCESS_POLICY_AUD = "8e44f1070780a22a9b34ffe5b4a087875b8de28eae1581ecefa4a503c87eaaee"
+
+# Custom domain — Cloudflare creates and proxies the DNS record automatically.
+# The Access policy attaches to this hostname.
+[[routes]]
+pattern = "dashboard.florencescservices.com"
+custom_domain = true
