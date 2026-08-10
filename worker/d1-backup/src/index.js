@@ -124,7 +124,15 @@ async function runBackup(env) {
       prunes.push({ db: src.name, pruned: 0, skipped: "backup failed" });
     }
   }
-  return { stamp, backups, prunes, ok: backups.every((b) => b.ok) };
+  // A prune failure has to reach `ok` too. It used to sit in prunes[].error
+  // where nothing read it: `ok` came from backups alone, so retention could
+  // fail on every source every night while the cron stayed green and R2 grew
+  // without bound. Kept as its own flag so the throw can name which half broke
+  // — a failed backup means no new snapshot, a failed prune means the old ones
+  // never go away, and they need different responses.
+  const backupsOk = backups.every((b) => b.ok);
+  const prunesOk = prunes.every((p) => !p.error);
+  return { stamp, backups, prunes, ok: backupsOk && prunesOk, backups_ok: backupsOk, prunes_ok: prunesOk };
 }
 
 function authorized(request, env) {
@@ -144,8 +152,12 @@ export default {
       const r = await runBackup(env);
       console.log("d1-backup:", JSON.stringify(r));
       if (!r.ok) {
+        const problems = [];
         const failed = r.backups.filter((b) => !b.ok).map((b) => `${b.db}: ${b.error}`);
-        throw new Error(`d1-backup FAILED for ${failed.length} database(s) — ${failed.join("; ")}`);
+        if (failed.length) problems.push(`backup FAILED for ${failed.length} database(s) — ${failed.join("; ")}`);
+        const unpruned = r.prunes.filter((p) => p.error).map((p) => `${p.db}: ${p.error}`);
+        if (unpruned.length) problems.push(`prune FAILED for ${unpruned.length} database(s) — ${unpruned.join("; ")}`);
+        throw new Error(`d1-backup: ${problems.join(" | ")}`);
       }
     })());
   },
@@ -167,7 +179,9 @@ export default {
       if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
       const r = await runBackup(env);
       // A partial backup is a failure at the HTTP layer too — callers checking
-      // only the status code must not mistake it for success.
+      // only the status code must not mistake it for success. `ok` now covers
+      // pruning as well, so a run that snapshotted everything but pruned
+      // nothing returns 500 rather than a green 200.
       return json(r, r.ok ? 200 : 500);
     }
 
