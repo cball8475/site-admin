@@ -1326,11 +1326,25 @@ async function handleSeoSnapshot(env) {
     if (queryErrors.length > 0) {
       console.error("SEO snapshot PARTIAL: " + log.fixes_matched + "/" + log.fixes_total + " matched; " + finalError);
       // A degraded run must reach a human, not just a D1 log row nobody reads.
-      await sendOpsAlertEmail(
+      // sendOpsAlertEmail never throws \u2014 every failure path returns
+      // {sent:false, reason} after a console.error \u2014 so the result has to be
+      // read here or the guarantee above is not enforced by anything.
+      const alert = await sendOpsAlertEmail(
         env,
         "FSC SEO snapshot PARTIAL \u2014 " + queryErrors.length + " keyword(s) skipped on " + snapshotDate,
         "The daily SEO position snapshot completed but skipped " + queryErrors.length + " keyword(s):\n\n" + queryErrors.join("\n") + "\n\nMatched " + log.fixes_matched + "/" + log.fixes_total + " tracked fixes.\nDetails: GET /seo/fixes/snapshot-status on florence-crm-api, or the SEO Fix Tracker health strip on the admin dashboard."
       );
+      log.alert_delivered = !!(alert && alert.sent);
+      if (!log.alert_delivered) {
+        // The partial itself is survivable and stays "partial" in the D1 row
+        // written above. An undelivered alert is not: it means the degraded run
+        // reached nobody, and a green cron is the one place nobody looks. Fail
+        // the invocation so the cron history carries what the inbox did not.
+        const reason = (alert && alert.reason) || "unknown";
+        console.error("SEO snapshot PARTIAL and ops alert NOT delivered (" + reason + ")");
+        log.status = "error";
+        log.error_message = "partial snapshot, ops alert undelivered (" + reason + "): " + finalError;
+      }
     } else {
       console.log("SEO snapshot OK: " + log.fixes_matched + "/" + log.fixes_total + " matched");
     }
@@ -1346,11 +1360,18 @@ async function handleSeoSnapshot(env) {
     } catch (logErr) {
       console.error("DOUBLE FAULT \u2014 could not write cron error to D1:", logErr);
     }
-    await sendOpsAlertEmail(
+    // Status is already "error" here, so the invocation fails either way. The
+    // result is still read, because "the cron failed and nobody was told" is a
+    // different problem from "the cron failed" and only the log distinguishes them.
+    const failAlert = await sendOpsAlertEmail(
       env,
       "FSC SEO snapshot FAILED \u2014 " + new Date().toISOString().slice(0, 10),
       "The daily SEO position snapshot cron FAILED and wrote no data:\n\n" + log.error_message + "\n\nNo positions were recorded for any tracked keyword today. The dashboard's SEO Fix Tracker will flag this as a stale/failed snapshot.\nDetails: GET /seo/fixes/snapshot-status on florence-crm-api."
     );
+    log.alert_delivered = !!(failAlert && failAlert.sent);
+    if (!log.alert_delivered) {
+      console.error("SEO snapshot FAILED and ops alert NOT delivered (" + ((failAlert && failAlert.reason) || "unknown") + ")");
+    }
     return log;
   }
 }
